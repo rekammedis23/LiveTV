@@ -578,6 +578,55 @@
     return "https://flagcdn.com/w40/" + c + ".png";
   }
 
+  // Nama lengkap negara (ISO 3166-1 alpha-2, bahasa Indonesia)
+  var COUNTRY_NAMES = {
+    AD:"Andorra",AE:"Uni Emirat Arab",AF:"Afghanistan",AG:"Antigua dan Barbuda",AI:"Anguilla",AL:"Albania",AM:"Armenia",AO:"Angola",AQ:"Antartika",AR:"Argentina",AS:"Samoa Amerika",AT:"Austria",AU:"Australia",AW:"Aruba",AX:"Kepulauan Åland",AZ:"Azerbaijan",
+    BA:"Bosnia dan Herzegovina",BB:"Barbados",BD:"Bangladesh",BE:"Belgia",BF:"Burkina Faso",BG:"Bulgaria",BH:"Bahrain",BI:"Burundi",BJ:"Benin",BL:"Saint Barthélemy",BM:"Bermuda",BN:"Brunei",BO:"Bolivia",BQ:"Karibia Belanda",BR:"Brasil",BS:"Bahama",BT:"Bhutan",BV:"Pulau Bouvet",BW:"Botswana",BY:"Belarus",BZ:"Belize",
+    CA:"Kanada",CC:"Kepulauan Cocos",CD:"Kongo (DRC)",CF:"Republik Afrika Tengah",CG:"Kongo",CH:"Swiss",CI:"Pantai Gading",CK:"Kepulauan Cook",CL:"Chili",CM:"Kamerun",CN:"Tiongkok",CO:"Kolombia",CR:"Kosta Rika",CU:"Kuba",CV:"Tanjung Verde",CW:"Curaçao",CX:"Pulau Natal",CY:"Siprus",CZ:"Ceko",
+    DE:"Jerman",DJ:"Jibuti",DK:"Denmark",DM:"Dominika",DO:"Republik Dominika",DZ:"Aljazair",
+    EC:"Ekuador",EE:"Estonia",EG:"Mesir",EH:"Sahara Barat",ER:"Eritrea",ES:"Spanyol",ET:"Ethiopia",
+    FI:"Finlandia",FJ:"Fiji",FK:"Kepulauan Falkland",FM:"Mikronesia",FO:"Kepulauan Faroe",FR:"Prancis",
+    GA:"Gabon",GB:"Inggris Raya",GD:"Grenada",GE:"Georgia",GF:"Guyana Prancis",GG:"Guernsey",GH:"Ghana",GI:"Gibraltar",GL:"Greenland",GM:"Gambia",GN:"Guinea",GP:"Guadeloupe",GQ:"Guinea Khatulistiwa",GR:"Yunani",GS:"Georgia Selatan",GT:"Guatemala",GU:"Guam",GW:"Guinea-Bissau",GY:"Guyana",
+    HK:"Hong Kong",HN:"Honduras",HR:"Kroasia",HT:"Haiti",HU:"Hungaria",
+    ID:"Indonesia",IE:"Irlandia",IL:"Israel",IM:"Pulau Man",IN:"India",IO:"Teritori Samudra Hindia",IQ:"Irak",IR:"Iran",IS:"Islandia",IT:"Italia",
+    JE:"Jersey",JM:"Jamaika",JO:"Yordania",JP:"Jepang",
+    KE:"Kenya",KG:"Kirgistan",KH:"Kamboja",KI:"Kiribati",KM:"Komoro",KN:"Saint Kitts dan Nevis",KP:"Korea Utara",KR:"Korea Selatan",KW:"Kuwait",KY:"Kepulauan Cayman",KZ:"Kazakhstan",
+    LA:"Laos",LB:"Lebanon",LC:"Saint Lucia",LI:"Liechtenstein",LK:"Sri Lanka",LR:"Liberia",LS:"Lesotho",LT:"Lituania",LU:"Luksemburg",LV:"Latvia",LY:"Libya",
+    MA:"Maroko",MC:"Monako",MD:"Moldova",ME:"Montenegro",MF:"Saint Martin",MG:"Madagaskar",MH:"Kepulauan Marshall",MK:"Makedonia Utara",ML:"Mali",MM:"Myanmar",MN:"Mongolia",MO:"Makau",MP:"Mariana Utara",MQ:"Martinik",MR:"Mauritania",MS:"Montserrat",MT:"Malta",MU:"Mauritius",MV:"Maladewa",MW:"Malawi",MX:"Meksiko",MY:"Malaysia",MZ:"Mozambik",
+    NA:"Namibia",NC:"Kaledonia Baru",NE:"Niger",NF:"Kepulauan Norfolk",NG:"Nigeria",NI:"Nikaragua",NL:"Belanda",NO:"Norwegia",NP:"Nepal",NR:"Nauru",NU:"Niue",NZ:"Selandia Baru",
+    OM:"Oman",
+    PA:"Panama",PE:"Peru",PF:"Polinesia Prancis",PG:"Papua Nugini",PH:"Filipina",PK:"Pakistan",PL:"Polandia",PM:"Saint Pierre dan Miquelon",PN:"Kepulauan Pitcairn",PR:"Puerto Riko",PS:"Palestina",PT:"Portugal",PW:"Palau",PY:"Paraguay",
+    QA:"Qatar",
+    RE:"Réunion",RO:"Rumania",RS:"Serbia",RU:"Rusia",RW:"Rwanda",
+    SA:"Arab Saudi",SB:"Kepulauan Solomon",SC:"Seychelles",SD:"Sudan",SE:"Swedia",SG:"Singapura",SH:"Saint Helena",SI:"Slovenia",SJ:"Svalbard dan Jan Mayen",SK:"Slovakia",SL:"Sierra Leone",SM:"San Marino",SN:"Senegal",SO:"Somalia",SR:"Suriname",SS:"Sudan Selatan",ST:"São Tomé dan Príncipe",SV:"El Salvador",SX:"Sint Maarten",SY:"Suriah",SZ:"Eswatini",
+    TC:"Turks dan Caicos",TD:"Chad",TF:"Teritori Selatan Prancis",TG:"Togo",TH:"Thailand",TJ:"Tajikistan",TK:"Tokelau",TL:"Timor Leste",TM:"Turkmenistan",TN:"Tunisia",TO:"Tonga",TR:"Turki",TT:"Trinidad dan Tobago",TV:"Tuvalu",TW:"Taiwan",TZ:"Tanzania",
+    UA:"Ukraina",UG:"Uganda",UM:"Kepulauan Outlying AS",US:"Amerika Serikat",UY:"Uruguay",UZ:"Uzbekistan",
+    VA:"Vatikan",VC:"Saint Vincent dan Grenadine",VE:"Venezuela",VG:"Virgin Inggris",VI:"Virgin AS",VN:"Vietnam",VU:"Vanuatu",
+    WF:"Wallis dan Futuna",WS:"Samoa",
+    YE:"Yaman",YT:"Mayotte",
+    ZA:"Afrika Selatan",ZM:"Zambia",ZW:"Zimbabwe"
+  };
+
+  function initialOf(ch){ return ((ch.name||"?").trim().charAt(0) || "?").toUpperCase(); }
+  function fallbackLogoEl(cls, ch){
+    var d = document.createElement("div"); d.className = cls; d.textContent = initialOf(ch); return d;
+  }
+  // Logo: coba sumber asli; jika gagal (mis. TLS/cipher error) coba lewat proxy images.weserv.nl
+  function logoImg(url, onFail){
+    var im = document.createElement("img");
+    im.loading = "lazy"; im.alt = ""; im.referrerPolicy = "no-referrer";
+    var tried = false;
+    im.onerror = function(){
+      if(!tried){
+        tried = true;
+        try{ im.src = "https://images.weserv.nl/?url=" + encodeURIComponent(url.replace(/^https?:\/\//i,"")); }
+        catch(e){ onFail(); }
+      } else { onFail(); }
+    };
+    im.src = url;
+    return im;
+  }
+
   /* ---------- state ---------- */
   var S = {
     channels: [],
@@ -701,8 +750,14 @@
     var cc = {};
     S.channels.forEach(function(c){ if(c.country) cc[c.country]=1; });
     var sel = $("#countrySel");
-    Object.keys(cc).sort().forEach(function(c){
-      var o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
+    var opts = Object.keys(cc).map(function(code){
+      return { code: code, name: (COUNTRY_NAMES[code] || code) };
+    }).sort(function(a,b){ return a.name.localeCompare(b.name, "id"); });
+    opts.forEach(function(o){
+      var opt = document.createElement("option");
+      opt.value = o.code;
+      opt.textContent = o.code + " — " + o.name;
+      sel.appendChild(opt);
     });
     sel.addEventListener("change", function(){ S.country = sel.value; S.visible = 60; applyFilters(); });
   }
@@ -755,13 +810,12 @@
     var logoBox = document.createElement("div");
     logoBox.className = "logo-box";
     if(ch.logo){
-      var im = document.createElement("img");
-      im.loading = "lazy"; im.alt = "";
-      im.src = ch.logo;
-      im.onerror = function(){ this.remove(); var fb=document.createElement("div"); fb.className="logo-init"; fb.textContent=(ch.name||"?").charAt(0).toUpperCase(); logoBox.appendChild(fb); };
+      var im = logoImg(ch.logo, function(){
+        im.remove(); logoBox.appendChild(fallbackLogoEl("logo-init", ch));
+      });
       logoBox.appendChild(im);
     } else {
-      var fb = document.createElement("div"); fb.className="logo-init"; fb.textContent=(ch.name||"?").charAt(0).toUpperCase(); logoBox.appendChild(fb);
+      logoBox.appendChild(fallbackLogoEl("logo-init", ch));
     }
 
     var info = document.createElement("div"); info.className = "ch-info";
@@ -806,11 +860,13 @@
     // logo
     var box = $("#chLogoBox");
     if(ch.logo){
-      var im = document.createElement("img"); im.className="ch-logo"; im.alt=""; im.src=ch.logo;
-      im.onerror = function(){ this.remove(); };
+      var im = logoImg(ch.logo, function(){
+        im.replaceWith(fallbackLogoEl("ch-logo-fallback", ch));
+      });
+      im.className = "ch-logo";
       box.replaceWith(im); box = im;
     } else {
-      if(box.classList) { box.className = "ch-logo-fallback"; box.textContent = (ch.name||"?").charAt(0).toUpperCase(); }
+      if(box.classList) { box.className = "ch-logo-fallback"; box.textContent = initialOf(ch); }
     }
 
     // meta pills
