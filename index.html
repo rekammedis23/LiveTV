@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IPTV — Saluran Siaran Langsung</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- HLS.js untuk memutar aliran langsung di peramban -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>📺 IPTV Langsung</h1>
+    <p>Kumpulan saluran dari seluruh dunia — mudah diputar, dibagikan, disematkan</p>
+    <div class="theme-switch">
+      <button id="toggleMode">🌙 Mode Gelap</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Panel Saringan & Pencarian -->
+    <aside class="sidebar">
+      <input type="text" id="searchInput" placeholder="Cari nama saluran...">
+      
+      <div class="filters">
+        <select id="filterCountry">
+          <option value="">Semua Negara</option>
+          <option value="ID">Indonesia</option>
+          <option value="US">Amerika Serikat</option>
+          <option value="GB">Inggris</option>
+          <option value="JP">Jepang</option>
+        </select>
+        
+        <select id="filterCategory">
+          <option value="">Semua Kategori</option>
+          <option value="news">Berita</option>
+          <option value="sports">Olahraga</option>
+          <option value="entertainment">Hiburan</option>
+          <option value="kids">Anak-anak</option>
+        </select>
+      </div>
+
+      <h3>Daftar Saluran</h3>
+      <ul id="channelList" class="channel-list">
+        <!-- Daftar saluran dimuat lewat JavaScript -->
+        <li class="loading">Memuat data saluran...</li>
+      </ul>
+    </aside>
+
+    <!-- Panel Pemutar & Info -->
+    <main class="player-section">
+      <div class="player-container">
+        <video id="player" controls autoplay muted></video>
+        <div id="playerStatus" class="status">Pilih saluran untuk mulai menonton</div>
+      </div>
+
+      <div class="channel-info" id="channelInfo">
+        <h2 id="chName">—</h2>
+        <p id="chMeta"></p>
+      </div>
+
+      <!-- Tombol Bagikan & Sematkan -->
+      <div class="actions">
+        <button id="shareBtn" class="btn share">📤 Bagikan</button>
+        <button id="embedBtn" class="btn embed">🧩 Kode Sematkan</button>
+        <button id="copyM3uBtn" class="btn m3u">📋 Salin Tautan M3U</button>
+      </div>
+
+      <!-- Kotak Kode Sematkan -->
+      <div id="embedBox" class="code-box hidden">
+        <h3>Kode Sematkan ke Halaman Anda</h3>
+        <textarea id="embedCode" readonly></textarea>
+        <button id="copyEmbed" class="btn kecil">Salin Kode</button>
+      </div>
+
+      <!-- Kotak Bagikan -->
+      <div id="shareBox" class="code-box hidden">
+        <h3>Bagikan ke Teman</h3>
+        <div class="share-buttons">
+          <a id="shareWA" target="_blank">WhatsApp</a>
+          <a id="shareTG" target="_blank">Telegram</a>
+          <a id="shareFB" target="_blank">Facebook</a>
+          <button id="copyLinkBtn">Salin Tautan</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer>
+    <p>Sumber data: <a href="https://github.com/iptv-org/iptv" target="_blank">iptv-org/iptv</a> — Data disediakan apa adanya tanpa perubahan</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
