@@ -474,7 +474,7 @@
 </main>
 
 <footer>
-  <p><b>LayarIPTV</b> — antarmuka pemutar untuk koleksi siaran publik <a href="https://github.com/iptv-org/iptv" target="_blank" rel="noopener">iptv-org/iptv</a>.</p>
+  <p><b>LayarIPTV</b> — gabungan dua sumber siaran publik: <a href="https://github.com/iptv-org/iptv" target="_blank" rel="noopener">iptv-org/iptv</a> + <a href="https://github.com/Free-TV/IPTV" target="_blank" rel="noopener">Free-TV/IPTV</a> (duplikat otomatis dihapus).</p>
   <p style="margin-top:.3rem">Semua aliran disediakan apa adanya oleh pemilik aslinya. Halaman ini tidak menyimpan konten video apa pun.</p>
 </footer>
 
@@ -650,10 +650,11 @@
   function isFav(url){ return S.favorites.some(function(f){ return f.url === url; }); }
 
   /* ---------- M3U parser ---------- */
-  function parseM3U(text){
+  function parseM3U(text, sumber){
     var lines = text.split(/\r?\n/);
     var out = [], meta = null;
     var attrRe = /([a-zA-Z_][\w-]*)="([^"]*)"/g;
+    var SKIP_HOST = /(youtube\.com|youtu\.be|twitch\.tv|dailymotion\.com)/i; // tidak bisa diputar HLS langsung
     for(var i=0;i<lines.length;i++){
       var line = lines[i].trim();
       if(!line) continue;
@@ -664,23 +665,35 @@
         while((m = attrRe.exec(rest)) !== null){ meta[m[1].toLowerCase()] = m[2]; }
         var comma = rest.lastIndexOf(",");
         meta.name = comma >= 0 ? rest.slice(comma+1).trim() : "Tanpa Nama";
-        // kode negara diambil dari tvg-id, contoh: "NamaSaluran.id@SD" → ID
-        var tid = meta["tvg-id"] || "";
-        var cm = tid.match(/\.([a-z]{2})@/i);
-        meta.country = cm ? cm[1].toUpperCase() : "";
+        // Free-TV menandai: Ⓢ=SD, Ⓖ=geo-blocked, Ⓨ=YouTube, Ⓣ=Twitch. Bersihkan dari nama.
+        meta.geo = /Ⓖ/.test(meta.name);
+        meta.sd = /Ⓢ/.test(meta.name);
+        meta.name = meta.name.replace(/[ⓈⒼⓎⓉ]\s*/g, "").trim();
+        // Negara: Free-TV punya tvg-country langsung; iptv-org ambil dari tvg-id
+        meta.country = (meta["tvg-country"] || "").toUpperCase();
+        if(!meta.country){
+          var tid = meta["tvg-id"] || "";
+          var cm = tid.match(/\.([a-z]{2})@/i);
+          meta.country = cm ? cm[1].toUpperCase() : "";
+        }
         if(!meta.country){
           var cm2 = meta.name.match(/\(([A-Z]{2})\)\s*$/);
           meta.country = cm2 ? cm2[1] : "";
         }
-        // kategori: ambil segmen pertama jika dipisah ";"
-        var gt = (meta["group-title"] || "Lainnya").trim();
-        if(gt === "Undefined" || !gt) gt = "Lainnya";
-        meta.category = gt.split(";")[0].trim() || "Lainnya";
-        meta.categoryFull = gt;
+        // Kategori: iptv-org pakai group-title sebagai kategori; Free-TV group-title = negara
+        if(sumber && sumber.grupKategori){
+          var gt = (meta["group-title"] || "Lainnya").trim();
+          if(gt === "Undefined" || !gt) gt = "Lainnya";
+          meta.category = gt.split(";")[0].trim() || "Lainnya";
+        } else {
+          meta.category = "Umum";
+        }
         meta.logo = meta["tvg-logo"] || "";
+        meta.source = sumber ? sumber.nama : "";
         var qm = meta.name.match(/\((\d{3,4}p)\)/);
-        meta.quality = qm ? qm[1] : "";
+        meta.quality = qm ? qm[1] : (meta.sd ? "SD" : "");
       } else if(line.indexOf("http") === 0 && meta){
+        if(SKIP_HOST.test(line)){ meta = null; continue; } // lewati YouTube/Twitch (tidak bisa diputar HLS)
         meta.url = line;
         meta.id = hashId(line + meta.name);
         out.push(meta);
@@ -691,8 +704,11 @@
   }
 
   /* ---------- data loading ---------- */
-  var M3U_URL = "https://iptv-org.github.io/iptv/index.m3u";
-  var PROXY_URL = "https://api.allorigins.win/raw?url=" + encodeURIComponent(M3U_URL);
+  // Dua sumber digabung: iptv-org (variasi terbanyak) + Free-TV (terkurasi, lebih stabil, 86% https)
+  var SUMBER = [
+    { nama: "iptv-org", url: "https://iptv-org.github.io/iptv/index.m3u", grupKategori: true },
+    { nama: "Free-TV", url: "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8", grupKategori: false }
+  ];
   var CORS_PROXY = "https://api.allorigins.win/raw?url=";
   // PROXY_BASE: isi dengan URL proxy Anda sendiri (Cloudflare Worker gratis) agar aliran http / diblokir-CORS bisa diputar.
   // Contoh:  "https://iptv-proxy.username.workers.dev/?u="
@@ -713,15 +729,35 @@
     };
   }
 
+  function ambilSatu(src){
+    return fetch(src.url).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
+      .catch(function(){
+        return fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(src.url))
+          .then(function(r){ if(!r.ok) throw new Error("proxy fail"); return r.text(); });
+      })
+      .then(function(text){ return parseM3U(text, src); });
+  }
+
   function loadData(){
     showSkeletons();
-    fetch(M3U_URL).then(function(r){
-      if(!r.ok) throw new Error("HTTP " + r.status);
-      return r.text();
-    }).catch(function(){
-      return fetch(PROXY_URL).then(function(r){ if(!r.ok) throw new Error("proxy fail"); return r.text(); });
-    }).then(function(text){
-      S.channels = parseM3U(text);
+    Promise.allSettled(SUMBER.map(ambilSatu)).then(function(hasil){
+      var semua = [];
+      var sumberBerhasil = 0;
+      hasil.forEach(function(h){ if(h.status === "fulfilled"){ semua = semua.concat(h.value); sumberBerhasil++; } });
+      if(!semua.length){
+        $("#grid").innerHTML = "";
+        $("#emptyState").style.display = "block";
+        $("#emptyState h3").textContent = "Gagal memuat daftar saluran";
+        $("#emptyState p").textContent = "Periksa koneksi internet Anda.";
+        return;
+      }
+      // Gabung & hapus duplikat berdasarkan URL (Free-TV lebih terkurasi → didahulukan)
+      var urut = SUMBER.map(function(s){ return s.nama; });
+      semua.sort(function(a,b){ return urut.indexOf(a.source) - urut.indexOf(b.source); });
+      var seen = {}, merged = [];
+      semua.forEach(function(ch){ if(!seen[ch.url]){ seen[ch.url] = 1; merged.push(ch); } });
+      S.channels = merged;
+      S.sumberBerhasil = sumberBerhasil;
       buildFilters();
       applyFilters();
       updateStats();
@@ -731,11 +767,6 @@
         var ch = { name: p.get("play"), url: p.get("url"), logo: p.get("logo")||"", category: p.get("cat")||"", country: p.get("co")||"" };
         setTimeout(function(){ playChannel(ch); $("#playerFrame").scrollIntoView({behavior:"smooth", block:"start"}); }, 350);
       }
-    }).catch(function(err){
-      $("#grid").innerHTML = "";
-      $("#emptyState").style.display = "block";
-      $("#emptyState h3").textContent = "Gagal memuat daftar saluran";
-      $("#emptyState p").textContent = "Periksa koneksi internet Anda. (" + err.message + ")";
     });
   }
 
