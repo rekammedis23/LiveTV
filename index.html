@@ -694,6 +694,24 @@
   var M3U_URL = "https://iptv-org.github.io/iptv/index.m3u";
   var PROXY_URL = "https://api.allorigins.win/raw?url=" + encodeURIComponent(M3U_URL);
   var CORS_PROXY = "https://api.allorigins.win/raw?url=";
+  // PROXY_BASE: isi dengan URL proxy Anda sendiri (Cloudflare Worker gratis) agar aliran http / diblokir-CORS bisa diputar.
+  // Contoh:  "https://iptv-proxy.username.workers.dev/?u="
+  // Kosongkan jika tidak memakai proxy (aliran https+CORS tetap jalan normal).
+  var PROXY_BASE = "";
+  // Loader kustom HLS: setiap request (manifest + segmen + key) dilewatkan ke PROXY_BASE.
+  // loadSource tetap memakai URL asli, sehingga resolusi segmen relatif tetap benar.
+  var ProxyLoader = null;
+  if(window.Hls && Hls.DefaultConfig && Hls.DefaultConfig.loader){
+    ProxyLoader = function(){ Hls.DefaultConfig.loader.apply(this, arguments); };
+    ProxyLoader.prototype = Object.create(Hls.DefaultConfig.loader.prototype);
+    ProxyLoader.prototype.constructor = ProxyLoader;
+    ProxyLoader.prototype.load = function(context, config, callbacks){
+      if(PROXY_BASE && context && context.url && String(context.url).indexOf(PROXY_BASE) !== 0){
+        context.url = PROXY_BASE + encodeURIComponent(context.url);
+      }
+      return Hls.DefaultConfig.loader.prototype.load.call(this, context, config, callbacks);
+    };
+  }
 
   function loadData(){
     showSkeletons();
@@ -903,17 +921,22 @@
     $$(".ch-card").forEach(function(c){ c.classList.remove("playing"); });
 
     var video = $("#player"), status = $("#playerStatus");
-    // Hentikan & bersihkan pemutar lama sepenuhnya sebelum mulai yang baru
     if(S.hls){ try{ S.hls.destroy(); }catch(e){} S.hls = null; }
     video.pause(); video.removeAttribute("src");
     try{ video.load(); }catch(e){}
-    video.muted = true; // autoplay diizinkan peramban hanya jika bisu
+    video.muted = true; // autoplay hanya diizinkan peramban jika bisu
 
     var watchDog = null;
     function clearWatch(){ if(watchDog){ clearTimeout(watchDog); watchDog = null; } }
-    function onFail(msg){
+    function onFail(){
       clearWatch();
-      setStatus(status, msg || "Aliran tidak dapat diputar. Coba saluran lain.", "error");
+      var pesan = "Aliran tidak dapat diputar. ";
+      if(ch.url.indexOf("http://") === 0 && location.protocol === "https:"){
+        pesan += "Aliran ini menggunakan http (diblokir di halaman https). Aktifkan proxy (lihat README) atau putar di VLC.";
+      } else {
+        pesan += "Kemungkinan aliran telah berhenti, dibatasi geografis, atau diblokir CORS.";
+      }
+      setStatus(status, pesan, "error");
     }
     function onOk(){
       clearWatch();
@@ -928,63 +951,51 @@
       } else setStatus(status, "");
     }
 
-    function startStream(url, viaProxy){
-      setStatus(status, viaProxy ? "Mencoba jalur alternatif…" : "Menghubungkan ke aliran…", "loading");
+    // Jika aliran http, coba versi https dulu (banyak CDN mendukung keduanya)
+    var kandidat = [ch.url];
+    if(ch.url.indexOf("http://") === 0){
+      kandidat.unshift(ch.url.replace(/^http:/, "https:"));
+    }
+
+    function startStream(url, pakaiProxy, idx){
+      setStatus(status, pakaiProxy ? "Menggunakan proxy…" : (idx > 0 ? "Mencoba alternatif…" : "Menghubungkan ke aliran…"), "loading");
       clearWatch();
 
-      // Jalur native (Safari / peramban yang mendukung HLS langsung)
       if(!window.Hls || !Hls.isSupported()){
         if(video.canPlayType("application/vnd.apple.mpegurl")){
           video.src = url;
           video.addEventListener("loadedmetadata", onOk, { once: true });
-          video.addEventListener("error", function(){
-            if(!viaProxy){ startStream(CORS_PROXY + encodeURIComponent(ch.url), true); }
-            else onFail("Aliran tidak dapat dimuat.");
-          }, { once: true });
-        } else {
-          onFail("Peramban tidak mendukung pemutaran HLS.");
-        }
+          video.addEventListener("error", function(){ cobaBerikutnya(idx, pakaiProxy); }, { once: true });
+        } else onFail();
         return;
       }
 
-      var hls = new Hls({
-        maxBufferLength: 30, backBufferLength: 20,
-        manifestLoadingMaxRetry: 2, levelLoadingMaxRetry: 2,
-        fragLoadingMaxRetry: 2
-      });
+      var cfg = { maxBufferLength: 30, backBufferLength: 20, manifestLoadingMaxRetry: 2, levelLoadingMaxRetry: 2, fragLoadingMaxRetry: 2 };
+      if(pakaiProxy && ProxyLoader) cfg.loader = ProxyLoader;
+      var hls = new Hls(cfg);
       S.hls = hls;
-      hls.loadSource(url);
+      hls.loadSource(url); // SELALU URL asli → resolusi segmen relatif tetap benar
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, onOk);
       hls.on(Hls.Events.ERROR, function(ev, data){
         if(!data.fatal) return;
-        if(data.type === Hls.ErrorTypes.NETWORK_ERROR){
-          // CORS sering memblokir aliran IPTV — coba lewat proxy sekali
-          if(!viaProxy){
-            try{ hls.destroy(); }catch(e){} S.hls = null;
-            startStream(CORS_PROXY + encodeURIComponent(ch.url), true);
-          } else {
-            onFail("Aliran diblokir atau telah berhenti. Coba saluran lain.");
-          }
-        } else if(data.type === Hls.ErrorTypes.MEDIA_ERROR){
-          try{ hls.recoverMediaError(); }catch(e){ onFail("Format media tidak didukung."); }
+        if(data.type === Hls.ErrorTypes.MEDIA_ERROR){
+          try{ hls.recoverMediaError(); }catch(e){ cobaBerikutnya(idx, pakaiProxy); }
         } else {
-          onFail("Aliran tidak dapat diputar.");
+          cobaBerikutnya(idx, pakaiProxy);
         }
       });
-
-      // Watchdog: jika manifest tak kunjung dimuat dalam 18 detik, coba proxy
-      watchDog = setTimeout(function(){
-        if(!viaProxy){
-          try{ if(S.hls === hls){ hls.destroy(); S.hls = null; } }catch(e){}
-          startStream(CORS_PROXY + encodeURIComponent(ch.url), true);
-        } else {
-          onFail("Aliran merespons terlalu lambat. Coba saluran lain.");
-        }
-      }, 18000);
+      watchDog = setTimeout(function(){ cobaBerikutnya(idx, pakaiProxy); }, 12000);
     }
 
-    startStream(ch.url, false);
+    function cobaBerikutnya(idx, pakaiProxy){
+      if(S.hls){ try{ S.hls.destroy(); }catch(e){} S.hls = null; }
+      if(idx + 1 < kandidat.length){ startStream(kandidat[idx+1], false, idx+1); return; }
+      if(!pakaiProxy && PROXY_BASE && ProxyLoader){ startStream(ch.url, true, idx); return; }
+      onFail();
+    }
+
+    startStream(kandidat[0], false, 0);
 
     updateShareEmbed();
   }
