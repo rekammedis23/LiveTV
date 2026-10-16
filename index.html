@@ -385,6 +385,8 @@
   .ep-grid{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.5rem}
   .ep-chip{padding:.45rem .8rem;border-radius:10px;background:var(--card-2);border:1px solid var(--border);font-size:.82rem;font-weight:700;cursor:pointer;transition:.2s}
   .ep-chip:hover,.ep-chip.playing{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .ep-chip.vip{color:#facc15;border-color:rgba(250,204,21,.45)}
+  .ep-chip.vip:hover,.ep-chip.vip.playing{background:#facc15;color:#1a1200;border-color:#facc15}
   @media (max-width:640px){
     .drama-detail{grid-template-columns:1fr}
     .logo span{display:none}
@@ -1035,15 +1037,27 @@
       } else setStatus(status, "");
     }
 
-    // Jika aliran http, coba versi https dulu (banyak CDN mendukung keduanya)
-    var kandidat = [ch.url];
-    if(ch.url.indexOf("http://") === 0){
+    // Jika ch.urls disediakan (mis. drama multi-CDN), pakai sebagai daftar kandidat berurutan.
+    // Jika tidak, bangun dari ch.url + upgrade http→https.
+    var kandidat = (ch.urls && ch.urls.length)
+      ? ch.urls.filter(function(u){ return u && /^https?:\/\//.test(u); })
+      : [ch.url];
+    if(!(ch.urls && ch.urls.length) && ch.url.indexOf("http://") === 0){
       kandidat.unshift(ch.url.replace(/^http:/, "https:"));
     }
+    if(!kandidat.length) kandidat = [ch.url];
 
     function startStream(url, pakaiProxy, idx){
       setStatus(status, pakaiProxy ? "Menggunakan proxy…" : (idx > 0 ? "Mencoba alternatif…" : "Menghubungkan ke aliran…"), "loading");
       clearWatch();
+
+      // Video MP4 langsung (mis. dari CDN TikTok) → putar native, tidak perlu Hls.js
+      if(/\.mp4(\?|$)/i.test(url) || url.indexOf("mime_type=video_mp4") >= 0 || url.indexOf("tiktokcdn.com") >= 0){
+        video.src = url;
+        video.addEventListener("loadedmetadata", onOk, { once: true });
+        video.addEventListener("error", function(){ cobaBerikutnya(idx, pakaiProxy); }, { once: true });
+        return;
+      }
 
       if(!window.Hls || !Hls.isSupported()){
         if(video.canPlayType("application/vnd.apple.mpegurl")){
@@ -1190,9 +1204,10 @@
   var DRAMA_EP = {
     home: DP + "/foryou",
     search: DP + "/search",
-    searchParam: "q",          // coba ganti "keyword" / "search" / "s" jika hasil kosong
+    searchParam: "keyword",    // coba ganti "q" / "search" / "s" jika hasil kosong
     detail: DP + "/detail",    // + ?id=
-    episodes: DP + "/get-allepisode", // + ?id=
+    episodes: DP + "/get-allepisode", // + ?bookId=
+    episodesParam: "bookId",
     play: DP + "/decrypt"      // dramabox: + ?url=
   };
   var MODE = "tv";
@@ -1216,13 +1231,35 @@
   }
   function normDrama(o){
     o = o || {};
+    var genre = o.genre || o.category || o.type || "";
+    if(!genre && Array.isArray(o.tags)) genre = o.tags.join(", ");
+    if(!genre && o.tags) genre = String(o.tags);
     return {
-      id: o.id || o.dramaId || o.code || o.slug || o.drama_id || "",
-      title: o.title || o.name || o.dramaName || o.drama_name || "Tanpa Judul",
-      cover: o.cover || o.poster || o.image || o.thumbnail || o.posterUrl || "",
-      genre: o.genre || o.category || o.type || o.tags || "",
-      episodes: o.episodes || o.totalEpisodes || o.epCount || o.total_episodes || 0
+      id: o.bookId || o.id || o.dramaId || o.code || o.slug || o.drama_id || o.book_id || o.collection_id || "",
+      bookId: o.bookId || o.book_id || "",
+      title: o.bookName || o.title || o.name || o.dramaName || o.drama_name || "Tanpa Judul",
+      cover: o.coverWap || o.cover || o.poster || o.image || o.thumbnail || o.posterUrl || "",
+      genre: genre || "Drama Pendek",
+      episodes: o.chapterCount || o.episodes || o.totalEpisodes || o.epCount || o.total_episodes || 0,
+      synopsis: o.introduction || o.synopsis || o.desc || ""
     };
+  }
+  // Respons foryou berisi campuran kartu drama (cardType=1) dan kartu tag (cardType=3)
+  // yang di dalamnya ada tagCardVo.tagBooks (array drama bersarang). Ratakan & dedupe.
+  function flattenDramaList(list){
+    var out = [], seen = {};
+    function push(o){
+      if(!o) return;
+      var id = o.bookId || o.id;
+      if(!id || seen[id]) return;
+      seen[id] = 1; out.push(o);
+    }
+    (list || []).forEach(function(item){
+      if(!item) return;
+      if(item.bookId || item.id) push(item);
+      if(item.tagCardVo && item.tagCardVo.tagBooks) item.tagCardVo.tagBooks.forEach(push);
+    });
+    return out;
   }
   function dramaRender(list){
     var g = $("#dramaGrid"); g.innerHTML = "";
@@ -1248,7 +1285,7 @@
     $("#dramaDetail").style.display = "none";
     $("#dramaGrid").innerHTML = '<div class="skeleton" style="height:260px;border-radius:16px"></div>'.repeat(8);
     dramaFetch(DRAMA_EP.home).then(function(j){
-      dramaRender(findList(j));
+      dramaRender(flattenDramaList(findList(j)));
     }).catch(function(e){
       $("#dramaGrid").innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="alert-triangle"></i><h3>Gagal memuat drama</h3><p>'+esc(e.message)+'. Coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau tunggu 1 menit (rate limit 10 req/menit).</p></div>';
       if(window.lucide) lucide.createIcons();
@@ -1258,43 +1295,141 @@
     var det = $("#dramaDetail"); det.style.display = "grid";
     $("#ddCover").src = d.cover || "";
     $("#ddTitle").textContent = d.title;
-    $("#ddSyn").textContent = "Memuat daftar episode…";
+    $("#ddSyn").textContent = d.synopsis || "Memuat daftar episode…";
     $("#epGrid").innerHTML = "";
-    dramaFetch(DRAMA_EP.episodes + "?id=" + encodeURIComponent(d.id)).then(function(j){
-      var eps = findList(j);
-      $("#ddSyn").textContent = eps.length + " episode tersedia. Klik nomor episode untuk menonton.";
-      var g = $("#epGrid"); g.innerHTML = "";
-      eps.forEach(function(ep, i){
-        var num = ep.episode || ep.ep || ep.number || ep.epNumber || ep.episodeNumber || (i+1);
-        var chip = document.createElement("button"); chip.className = "ep-chip"; chip.textContent = "Eps " + num;
-        chip._ep = ep;
-        chip.addEventListener("click", function(){
-          $$(".ep-chip").forEach(function(x){ x.classList.remove("playing"); });
-          chip.classList.add("playing");
-          dramaPlay(d, num, ep);
+
+    // Provider berbeda memakai field id & parameter berbeda; coba semua kombinasi berurutan.
+    var idCands = [];
+    [d.id, d.bookId, d.dramaId, d.code, d.collection_id].forEach(function(v){
+      if(v != null && v !== "" && idCands.indexOf(String(v)) < 0) idCands.push(String(v));
+    });
+    var params = [];
+    [DRAMA_EP.episodesParam, "bookId", "id", "book_id", "bookid"].forEach(function(v){
+      if(v && params.indexOf(v) < 0) params.push(v);
+    });
+
+    if(!idCands.length){
+      $("#ddSyn").textContent = "ID drama tidak ditemukan. Coba pilih drama lain dari daftar.";
+      det.scrollIntoView({ behavior:"smooth", block:"nearest" });
+      return;
+    }
+
+    var pi = 0, ii = 0, lastErr = "";
+    function gagal(){
+      $("#ddSyn").textContent = "Gagal memuat daftar episode" + (lastErr ? ": " + lastErr : "") + ". Coba ganti DRAMA_PROVIDER atau pilih drama lain.";
+    }
+    function coba(){
+      if(ii >= idCands.length){ gagal(); return; }
+      if(pi >= params.length){ pi = 0; ii++; coba(); return; }
+      var p = params[pi++], idv = idCands[ii];
+      var url = DRAMA_EP.episodes + "?" + p + "=" + encodeURIComponent(idv);
+      console.log("[drama] fetch episodes:", url);
+      dramaFetch(url).then(function(j){
+        var eps = findList(j);
+        if(!eps.length && j && j.error){ lastErr = String(j.error); throw new Error(j.error); }
+        if(!eps.length){ coba(); return; }
+        var adaVip = eps.some(function(e){ return e && (e.isCharge == 1 || e.chargeChapter === true); });
+        $("#ddSyn").textContent = eps.length + " episode tersedia. Klik nomor episode untuk menonton." + (adaVip ? " Episode bertanda VIP mungkin berbayar." : "");
+        var g = $("#epGrid"); g.innerHTML = "";
+        eps.forEach(function(ep, i){
+          var num = 0;
+          if(ep && ep.chapterIndex != null && !isNaN(parseInt(ep.chapterIndex, 10))) num = parseInt(ep.chapterIndex, 10) + 1;
+          if(!num && ep && ep.chapterName){ var m = /(\d+)/.exec(ep.chapterName); if(m) num = parseInt(m[1], 10); }
+          if(!num && ep) num = ep.episode || ep.ep || ep.number || ep.epNumber || ep.episodeNumber || ep.chapter || ep.chapterNum || ep.chapterSort || ep.sort || 0;
+          if(!num) num = i + 1;
+          var vip = ep && (ep.isCharge == 1 || ep.chargeChapter === true);
+          var chip = document.createElement("button");
+          chip.className = "ep-chip" + (vip ? " vip" : "");
+          chip.textContent = "Eps " + num + (vip ? " · VIP" : "");
+          chip._ep = ep;
+          chip.addEventListener("click", function(){
+            $$(".ep-chip").forEach(function(x){ x.classList.remove("playing"); });
+            chip.classList.add("playing");
+            dramaPlay(d, num, ep);
+          });
+          g.appendChild(chip);
         });
-        g.appendChild(chip);
+      }).catch(function(e){
+        lastErr = (e && e.message) ? e.message : lastErr;
+        console.warn("[drama] episodes gagal:", p, idv, lastErr);
+        coba();
       });
-    }).catch(function(){ $("#ddSyn").textContent = "Gagal memuat daftar episode. Coba ganti DRAMA_PROVIDER atau parameter id."; });
+    }
+    coba();
     det.scrollIntoView({ behavior:"smooth", block:"nearest" });
   }
-  function dramaPlay(d, num, epObj){
+
+  // Ekstrak daftar URL video dari struktur dramabox: cdnList[].videoPathList[].videoPath.
+  // URL bertanda tangan CloudFront (mengandung Expires= & Signature=) bisa langsung diputar sebagai MP4.
+  // Prioritas: signed > isDefault > kualitas 720 > hindari 1080 VIP.
+  function kandidatVideoDrama(epObj){
+    var out = [];
+    var cdns = (epObj && epObj.cdnList) || ((epObj && epObj.data && epObj.data.cdnList)) || [];
+    cdns.forEach(function(cdn){
+      var paths = (cdn && cdn.videoPathList) || [];
+      paths.forEach(function(v){
+        if(!v || !v.videoPath || !/^https?:\/\//.test(v.videoPath)) return;
+        var signed = /Expires=/.test(v.videoPath) && /Signature=/.test(v.videoPath);
+        var def = (v.isDefault == 1 || v.isDefault === true) ? 1 : 0;
+        var q = parseInt(v.quality, 10) || 0;
+        var vipQ = (v.isVipEquity == 1) ? 1 : 0;
+        var score = (signed ? 1000 : 0) + def * 100 + (q === 720 ? 60 : (q >= 360 ? 20 : 0)) - vipQ * 80;
+        out.push({ url: v.videoPath, score: score, signed: signed });
+      });
+    });
+    out.sort(function(a, b){ return b.score - a.score; });
+    return out;
+  }
+
+function dramaPlay(d, num, epObj){
     epObj = epObj || {};
-    function putar(url){
-      if(!url || !/^https?:\/\//.test(url)){ toast("URL stream tidak ditemukan"); return; }
-      playChannel({ name: d.title + " — Eps " + num, url: url, logo: d.cover || "", category: "Drama Pendek", country: "CN" });
+    function putar(urls){
+      if(!urls || !urls.length){ toast("URL stream tidak ditemukan"); return; }
+      var ch = {
+        name: d.title + " — Eps " + num,
+        url: urls[0],
+        urls: urls,
+        logo: d.cover || "",
+        category: "Drama Pendek",
+        country: "CN",
+        quality: "MP4"
+      };
+      playChannel(ch);
       $("#playerFrame").scrollIntoView({ behavior:"smooth", block:"start" });
     }
-    // 1) jika episode sudah punya URL video langsung
-    var direct = epObj.url || epObj.video || epObj.videoUrl || epObj.play_url || epObj.stream || epObj.m3u8 || (epObj.data && (epObj.data.url || epObj.data.video));
-    if(direct && /^https?:\/\//.test(direct)){ putar(direct); return; }
-    // 2) jika ada url terenkripsi → panggil endpoint decrypt/play
-    var enc = epObj.url || epObj.encryptedUrl || epObj.playUrl || epObj.id;
+    var vip = epObj.isCharge == 1 || epObj.chargeChapter === true;
+    if(vip) toast("Episode VIP/berbayar — tetap dicoba diputar. Jika gagal, tonton episode awal yang gratis.");
+
+    // 1) URL langsung (mis. pinedrama best_url, shortmax)
+    var direct = epObj.best_url || epObj.url || epObj.video || epObj.videoUrl || epObj.play_url || epObj.stream || epObj.m3u8 || (epObj.data && (epObj.data.url || epObj.data.video || epObj.data.best_url));
+    if(direct && /^https?:\/\//.test(direct)){ putar([direct]); return; }
+
+    // 2) dramabox: ekstrak dari cdnList → wajib melewati endpoint decrypt agar .encrypt.mp4 bisa diputar
+    var cands = kandidatVideoDrama(epObj);
+    if(cands.length){
+      var targetUrl = cands[0].url;
+      
+      dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(targetUrl)).then(function(j){
+        var u = j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+        var urlList = [];
+        if(u && /^https?:\/\//.test(u)) urlList.push(u);
+        cands.forEach(function(c){ if(urlList.indexOf(c.url) < 0) urlList.push(c.url); });
+        if(urlList.length) putar(urlList);
+        else putar(cands.map(function(c){ return c.url; }));
+      }).catch(function(){
+        // Fallback jika fetch decrypt gagal
+        putar(cands.map(function(c){ return c.url; }));
+      });
+      return;
+    }
+
+    // 3) fallback: field terenkripsi → decrypt
+    var enc = epObj.encryptedUrl || epObj.playUrl || epObj.id;
     if(enc){
       dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(enc)).then(function(j){
-        var u = j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || j.data || (j.data && (j.data.url || j.data.video));
-        putar(typeof u === "string" ? u : "");
-      }).catch(function(e){ toast("Gagal memuat stream: " + e.message); });
+        var u = j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+        putar(typeof u === "string" ? [u] : []);
+      }).catch(function(e){ toast("Gagal memuat stream: " + (e && e.message ? e.message : "error")); });
     } else {
       toast("Data episode tidak lengkap — coba provider lain.");
     }
@@ -1404,7 +1539,7 @@
       dramaTimer = setTimeout(function(){
         if(!v){ dramaLoadHome(); return; }
         dramaFetch(DRAMA_EP.search + "?" + DRAMA_EP.searchParam + "=" + encodeURIComponent(v))
-          .then(function(j){ dramaRender(findList(j)); })
+          .then(function(j){ dramaRender(flattenDramaList(findList(j))); })
           .catch(function(){});
       }, 350);
     });
