@@ -359,7 +359,34 @@
   .embed-bar .live-badge{position:static;background:transparent;padding:0;backdrop-filter:none}
   .embed-bar a{margin-left:auto;color:var(--accent-2);font-weight:700}
 
+  /* ===== Short Drama ===== */
+  .mode-switch{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:.3rem;margin-bottom:1.25rem;gap:.3rem}
+  .mode-switch button{padding:.55rem 1.2rem;border-radius:999px;font-weight:700;font-size:.88rem;color:var(--muted);display:inline-flex;align-items:center;gap:.45rem;transition:.2s}
+  .mode-switch button.active{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:0 6px 16px -6px var(--accent)}
+  .mode-switch svg{width:16px;height:16px}
+  .drama-note{background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);color:var(--accent);padding:1rem 1.2rem;border-radius:14px;font-size:.88rem;line-height:1.6;margin-bottom:1.25rem}
+  .drama-note code{background:rgba(0,0,0,.2);padding:.1rem .4rem;border-radius:5px;font-size:.82rem}
+  .drama-search{display:flex;gap:.6rem;margin-bottom:1.25rem}
+  .drama-search input{flex:1;padding:.8rem 1.1rem;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:.95rem;outline:none;transition:.2s}
+  .drama-search input:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .drama-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1rem}
+  .drama-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:.25s;animation:fadeUp .4s ease both}
+  .drama-card:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 14px 30px -14px var(--accent)}
+  .drama-poster{aspect-ratio:3/4;background:var(--card-2);position:relative;overflow:hidden;display:grid;place-items:center}
+  .drama-poster img{width:100%;height:100%;object-fit:cover}
+  .drama-poster .ep-badge{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.72);color:#fff;padding:.2rem .55rem;border-radius:999px;font-size:.7rem;font-weight:700}
+  .drama-info{padding:.7rem .8rem .9rem}
+  .drama-info .t{font-weight:700;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drama-info .g{font-size:.72rem;color:var(--muted);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drama-detail{display:grid;grid-template-columns:200px 1fr;gap:1.25rem;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:1.25rem;margin-bottom:1.25rem}
+  .drama-detail img{width:100%;border-radius:14px;aspect-ratio:3/4;object-fit:cover;background:var(--card-2)}
+  .drama-detail h3{font-size:1.3rem;font-weight:800;margin-bottom:.35rem;letter-spacing:-.01em}
+  .drama-detail .syn{font-size:.88rem;color:var(--muted);line-height:1.6;margin:.5rem 0}
+  .ep-grid{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.5rem}
+  .ep-chip{padding:.45rem .8rem;border-radius:10px;background:var(--card-2);border:1px solid var(--border);font-size:.82rem;font-weight:700;cursor:pointer;transition:.2s}
+  .ep-chip:hover,.ep-chip.playing{background:var(--accent);color:#fff;border-color:var(--accent)}
   @media (max-width:640px){
+    .drama-detail{grid-template-columns:1fr}
     .logo span{display:none}
     .stats{grid-template-columns:1fr 1fr}
     .stat:last-child{grid-column:1/-1}
@@ -403,6 +430,12 @@
 </header>
 
 <main class="wrap">
+
+  <!-- Mode switch -->
+  <div class="mode-switch">
+    <button class="active" data-mode="tv"><i data-lucide="tv-2"></i>TV Live</button>
+    <button data-mode="drama"><i data-lucide="clapperboard"></i>Short Drama</button>
+  </div>
 
   <!-- Player hero -->
   <section class="player-hero">
@@ -471,6 +504,26 @@
   <div class="load-more" id="loadMoreWrap" style="display:none">
     <button class="btn btn-ghost" id="loadMoreBtn"><i data-lucide="chevrons-down"></i>Muat lebih banyak</button>
   </div>
+
+  <!-- Short Drama area -->
+  <section id="dramaArea" style="display:none">
+    <div class="drama-note" id="dramaNote" style="display:none">
+      Fitur <b>Short Drama</b> menggunakan API Sansekai (gratis, tanpa key). Rate limit 10 request/menit.
+      Jika hasil kosong, coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau <code>searchParam</code> di kode.
+    </div>
+    <div class="drama-search">
+      <input id="dramaSearch" type="search" placeholder="Cari drama pendek… (ceo, billionaire, revenge, marriage)" autocomplete="off">
+    </div>
+    <div class="drama-detail" id="dramaDetail" style="display:none">
+      <img id="ddCover" alt="">
+      <div>
+        <h3 id="ddTitle"></h3>
+        <p class="syn" id="ddSyn"></p>
+        <div class="ep-grid" id="epGrid"></div>
+      </div>
+    </div>
+    <div class="drama-grid" id="dramaGrid"></div>
+  </section>
 </main>
 
 <footer>
@@ -713,7 +766,7 @@
   // PROXY_BASE: isi dengan URL proxy Anda sendiri (Cloudflare Worker gratis) agar aliran http / diblokir-CORS bisa diputar.
   // Contoh:  "https://iptv-proxy.username.workers.dev/?u="
   // Kosongkan jika tidak memakai proxy (aliran https+CORS tetap jalan normal).
-  var PROXY_BASE = "https://square-flower-c533.placeforsosmed.workers.dev/?u=";
+  var PROXY_BASE = "";
   // Loader kustom HLS: setiap request (manifest + segmen + key) dilewatkan ke PROXY_BASE.
   // loadSource tetap memakai URL asli, sehingga resolusi segmen relatif tetap benar.
   var ProxyLoader = null;
@@ -1127,6 +1180,137 @@
     localStorage.setItem("lip_theme", t);
   }
 
+  /* ---------- Short Drama (DramaBos API) ---------- */
+  // ===== Short Drama: Sansekai API (gratis, tanpa key, CORS terbuka) =====
+  // Provider tersedia: dramabox, shortmax, reelshort, goodshort, freereels, flickreels, pinedrama, dramanova
+  var DRAMA_BASE = "https://api.sansekai.my.id/api";
+  var DRAMA_PROVIDER = "dramabox";
+  var DP = "/" + DRAMA_PROVIDER;
+  // Endpoint bisa disesuaikan jika struktur respons berbeda (kirim sampel JSON ke saya untuk disesuaikan)
+  var DRAMA_EP = {
+    home: DP + "/foryou",
+    search: DP + "/search",
+    searchParam: "q",          // coba ganti "keyword" / "search" / "s" jika hasil kosong
+    detail: DP + "/detail",    // + ?id=
+    episodes: DP + "/get-allepisode", // + ?id=
+    play: DP + "/decrypt"      // dramabox: + ?url=
+  };
+  var MODE = "tv";
+
+  function dramaFetch(path){
+    // Sansekai CORS terbuka (access-control-allow-origin: *), jadi tidak perlu proxy.
+    // Rate limit: 10 request/menit (gratis).
+    return fetch(DRAMA_BASE + path).then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+  function findList(obj){
+    if(Array.isArray(obj)) return obj;
+    if(obj && typeof obj === "object"){
+      var keys = Object.keys(obj);
+      for(var i=0;i<keys.length;i++){ if(Array.isArray(obj[keys[i]])) return obj[keys[i]]; }
+      if(obj.data) return findList(obj.data);
+    }
+    return [];
+  }
+  function normDrama(o){
+    o = o || {};
+    return {
+      id: o.id || o.dramaId || o.code || o.slug || o.drama_id || "",
+      title: o.title || o.name || o.dramaName || o.drama_name || "Tanpa Judul",
+      cover: o.cover || o.poster || o.image || o.thumbnail || o.posterUrl || "",
+      genre: o.genre || o.category || o.type || o.tags || "",
+      episodes: o.episodes || o.totalEpisodes || o.epCount || o.total_episodes || 0
+    };
+  }
+  function dramaRender(list){
+    var g = $("#dramaGrid"); g.innerHTML = "";
+    if(!list.length){
+      g.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="clapperboard"></i><h3>Tidak ditemukan</h3><p>Coba kata kunci lain.</p></div>';
+      if(window.lucide) lucide.createIcons(); return;
+    }
+    list.slice(0, 60).forEach(function(d, i){
+      var nd = normDrama(d);
+      var card = document.createElement("div"); card.className = "drama-card";
+      card.style.animationDelay = Math.min(i, 20) * 30 + "ms";
+      var poster = '<div class="drama-poster">' +
+        (nd.cover ? '<img src="'+esc(nd.cover)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '<i data-lucide="clapperboard" style="width:36px;height:36px;color:var(--faint)"></i>') +
+        (nd.episodes ? '<span class="ep-badge">'+nd.episodes+' eps</span>' : '') + '</div>';
+      card.innerHTML = poster + '<div class="drama-info"><div class="t">'+esc(nd.title)+'</div><div class="g">'+esc(typeof nd.genre==="string"?nd.genre:"Drama Pendek")+'</div></div>';
+      card.addEventListener("click", function(){ dramaOpen(nd); });
+      g.appendChild(card);
+    });
+    if(window.lucide) lucide.createIcons();
+  }
+  function dramaLoadHome(){
+    $("#dramaNote").style.display = "none";
+    $("#dramaDetail").style.display = "none";
+    $("#dramaGrid").innerHTML = '<div class="skeleton" style="height:260px;border-radius:16px"></div>'.repeat(8);
+    dramaFetch(DRAMA_EP.home).then(function(j){
+      dramaRender(findList(j));
+    }).catch(function(e){
+      $("#dramaGrid").innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="alert-triangle"></i><h3>Gagal memuat drama</h3><p>'+esc(e.message)+'. Coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau tunggu 1 menit (rate limit 10 req/menit).</p></div>';
+      if(window.lucide) lucide.createIcons();
+    });
+  }
+  function dramaOpen(d){
+    var det = $("#dramaDetail"); det.style.display = "grid";
+    $("#ddCover").src = d.cover || "";
+    $("#ddTitle").textContent = d.title;
+    $("#ddSyn").textContent = "Memuat daftar episode…";
+    $("#epGrid").innerHTML = "";
+    dramaFetch(DRAMA_EP.episodes + "?id=" + encodeURIComponent(d.id)).then(function(j){
+      var eps = findList(j);
+      $("#ddSyn").textContent = eps.length + " episode tersedia. Klik nomor episode untuk menonton.";
+      var g = $("#epGrid"); g.innerHTML = "";
+      eps.forEach(function(ep, i){
+        var num = ep.episode || ep.ep || ep.number || ep.epNumber || ep.episodeNumber || (i+1);
+        var chip = document.createElement("button"); chip.className = "ep-chip"; chip.textContent = "Eps " + num;
+        chip._ep = ep;
+        chip.addEventListener("click", function(){
+          $$(".ep-chip").forEach(function(x){ x.classList.remove("playing"); });
+          chip.classList.add("playing");
+          dramaPlay(d, num, ep);
+        });
+        g.appendChild(chip);
+      });
+    }).catch(function(){ $("#ddSyn").textContent = "Gagal memuat daftar episode. Coba ganti DRAMA_PROVIDER atau parameter id."; });
+    det.scrollIntoView({ behavior:"smooth", block:"nearest" });
+  }
+  function dramaPlay(d, num, epObj){
+    epObj = epObj || {};
+    function putar(url){
+      if(!url || !/^https?:\/\//.test(url)){ toast("URL stream tidak ditemukan"); return; }
+      playChannel({ name: d.title + " — Eps " + num, url: url, logo: d.cover || "", category: "Drama Pendek", country: "CN" });
+      $("#playerFrame").scrollIntoView({ behavior:"smooth", block:"start" });
+    }
+    // 1) jika episode sudah punya URL video langsung
+    var direct = epObj.url || epObj.video || epObj.videoUrl || epObj.play_url || epObj.stream || epObj.m3u8 || (epObj.data && (epObj.data.url || epObj.data.video));
+    if(direct && /^https?:\/\//.test(direct)){ putar(direct); return; }
+    // 2) jika ada url terenkripsi → panggil endpoint decrypt/play
+    var enc = epObj.url || epObj.encryptedUrl || epObj.playUrl || epObj.id;
+    if(enc){
+      dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(enc)).then(function(j){
+        var u = j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || j.data || (j.data && (j.data.url || j.data.video));
+        putar(typeof u === "string" ? u : "");
+      }).catch(function(e){ toast("Gagal memuat stream: " + e.message); });
+    } else {
+      toast("Data episode tidak lengkap — coba provider lain.");
+    }
+  }
+  function setMode(m){
+    MODE = m;
+    $$(".mode-switch button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode === m); });
+    var tv = (m === "tv");
+    $("#stats").style.display = tv ? "grid" : "none";
+    $(".filter-bar").style.display = tv ? "flex" : "none";
+    $("#grid").style.display = tv ? "grid" : "none";
+    $("#loadMoreWrap").style.display = tv ? "" : "none";
+    $("#dramaArea").style.display = tv ? "none" : "block";
+    if(m === "drama") dramaLoadHome();
+  }
+
   /* ---------- events ---------- */
   function bindEvents(){
     // theme
@@ -1209,6 +1393,21 @@
     var p = new URLSearchParams(location.search);
     if(p.get("embed") === "1"){ runEmbedMode(); return; }
     bindEvents();
+    // Short Drama: tombol mode + pencarian
+    $$(".mode-switch button").forEach(function(b){
+      b.addEventListener("click", function(){ setMode(b.dataset.mode); });
+    });
+    var dramaTimer;
+    $("#dramaSearch").addEventListener("input", function(){
+      clearTimeout(dramaTimer);
+      var v = this.value.trim();
+      dramaTimer = setTimeout(function(){
+        if(!v){ dramaLoadHome(); return; }
+        dramaFetch(DRAMA_EP.search + "?" + DRAMA_EP.searchParam + "=" + encodeURIComponent(v))
+          .then(function(j){ dramaRender(findList(j)); })
+          .catch(function(){});
+      }, 350);
+    });
     loadData();
   }
   if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
