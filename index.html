@@ -1212,10 +1212,9 @@
   };
   var MODE = "tv";
 
-  function dramaFetch(path){
-    // Sansekai CORS terbuka (access-control-allow-origin: *), jadi tidak perlu proxy.
-    // Rate limit: 10 request/menit (gratis).
+function dramaFetch(path){
     return fetch(DRAMA_BASE + path).then(function(r){
+      if(r.status === 429) throw new Error("Rate limit tercapai (maks 10 request/menit). Tunggu 1 menit.");
       if(!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
@@ -1398,13 +1397,11 @@ function dramaPlay(d, num, epObj){
       $("#playerFrame").scrollIntoView({ behavior:"smooth", block:"start" });
     }
     var vip = epObj.isCharge == 1 || epObj.chargeChapter === true;
-    if(vip) toast("Episode VIP/berbayar — tetap dicoba diputar. Jika gagal, tonton episode awal yang gratis.");
+    if(vip) toast("Episode VIP/berbayar — tetap dicoba diputar.");
 
-    // 1) URL langsung (mis. pinedrama best_url, shortmax)
     var direct = epObj.best_url || epObj.url || epObj.video || epObj.videoUrl || epObj.play_url || epObj.stream || epObj.m3u8 || (epObj.data && (epObj.data.url || epObj.data.video || epObj.data.best_url));
     if(direct && /^https?:\/\//.test(direct)){ putar([direct]); return; }
 
-    // 2) dramabox: ekstrak dari cdnList → wajib melewati endpoint decrypt agar .encrypt.mp4 bisa diputar
     var cands = kandidatVideoDrama(epObj);
     if(cands.length){
       var targetUrl = cands[0].url;
@@ -1416,20 +1413,19 @@ function dramaPlay(d, num, epObj){
         cands.forEach(function(c){ if(urlList.indexOf(c.url) < 0) urlList.push(c.url); });
         if(urlList.length) putar(urlList);
         else putar(cands.map(function(c){ return c.url; }));
-      }).catch(function(){
-        // Fallback jika fetch decrypt gagal
+      }).catch(function(err){
+        toast(err.message || "Gagal mendekripsi stream");
         putar(cands.map(function(c){ return c.url; }));
       });
       return;
     }
 
-    // 3) fallback: field terenkripsi → decrypt
     var enc = epObj.encryptedUrl || epObj.playUrl || epObj.id;
     if(enc){
       dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(enc)).then(function(j){
         var u = j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
         putar(typeof u === "string" ? [u] : []);
-      }).catch(function(e){ toast("Gagal memuat stream: " + (e && e.message ? e.message : "error")); });
+      }).catch(function(e){ toast(e.message || "Gagal memuat stream"); });
     } else {
       toast("Data episode tidak lengkap — coba provider lain.");
     }
