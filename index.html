@@ -135,6 +135,13 @@
   .player-status.show{display:flex}
   .player-status.error{border-left:3px solid #ef4444}
   .player-status.loading{border-left:3px solid var(--accent-2)}
+  /* ===== Episode navigation (auto-next drama) ===== */
+  .ep-nav{position:absolute;top:14px;right:14px;z-index:5;display:none;align-items:center;gap:.3rem;padding:.3rem;border-radius:999px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px)}
+  .ep-nav.show{display:flex}
+  .ep-nav button{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:900;font-size:1.05rem;line-height:1;background:rgba(255,255,255,.14);transition:.2s;padding:0}
+  .ep-nav button:hover:not(:disabled){background:var(--accent)}
+  .ep-nav button:disabled{opacity:.3;cursor:not-allowed}
+  .ep-nav .ep-count{font-size:.75rem;font-weight:700;color:#fff;padding:0 .45rem;min-width:64px;text-align:center;font-variant-numeric:tabular-nums}
 
   .info-card{
     background:var(--card); border:1px solid var(--border); border-radius:20px;
@@ -443,6 +450,7 @@
   <section class="player-hero">
     <div class="player-frame" id="playerFrame">
       <span class="live-badge" id="liveBadge" style="display:none"><span class="live-dot"></span>LIVE</span>
+      <div class="ep-nav" id="epNav"><button id="prevEp" title="Episode sebelumnya (geser ke bawah / P)">‹</button><span class="ep-count" id="epCount">Eps 1/1</span><button id="nextEp" title="Episode berikutnya (geser ke atas / N)">›</button></div>
       <video id="player" controls playsinline allowfullscreen></video>
       <div class="player-overlay" id="playerOverlay">
         <div class="big-icon"><i data-lucide="play"></i></div>
@@ -698,8 +706,10 @@
     query: "",
     visible: 60,
     hls: null,
-    embed: false
+    embed: false,
+    drama: null // {d, eps:[], idx} untuk auto-next / swipe episode drama
   };
+  var sudahInteraksi = false; // true setelah interaksi pertama → autoplay bersuara diizinkan
   function saveFavs(){ localStorage.setItem("lip_favs", JSON.stringify(S.favorites.slice(0,200))); }
   function saveRecent(){ localStorage.setItem("lip_recent", JSON.stringify(S.recent.slice(0,12))); }
   function isFav(url){ return S.favorites.some(function(f){ return f.url === url; }); }
@@ -1018,7 +1028,7 @@
     if(S.hls){ try{ S.hls.destroy(); }catch(e){} S.hls = null; }
     video.pause(); video.removeAttribute("src");
     try{ video.load(); }catch(e){}
-    video.muted = true; // autoplay hanya diizinkan peramban jika bisu
+    video.muted = !sudahInteraksi; // setelah interaksi pertama, autoplay bersuara diizinkan peramban
 
     var watchDog = null;
     var gagalDiproses = false; // cegah cobaBerikutnya dipanggil dua kali (watchdog + error fatal bersamaan)
@@ -1108,6 +1118,7 @@
     startStream(kandidat[0], false, 0);
 
     updateShareEmbed();
+    updateEpNav();
   }
 
   /* ---------- favorites ---------- */
@@ -1307,6 +1318,36 @@ function dramaFetch(path){
       if(window.lucide) lucide.createIcons();
     });
   }
+  function nomorEpisode(ep, i){
+    ep = ep || {};
+    var num = 0;
+    if(ep.chapterIndex != null && !isNaN(parseInt(ep.chapterIndex, 10))) num = parseInt(ep.chapterIndex, 10) + 1;
+    if(!num && ep.chapterName){ var m = /(\d+)/.exec(ep.chapterName); if(m) num = parseInt(m[1], 10); }
+    if(!num) num = ep.episode || ep.ep || ep.number || ep.epNumber || ep.episodeNumber || ep.chapter || ep.chapterNum || ep.chapterSort || ep.sort || 0;
+    if(!num) num = (i||0) + 1;
+    return num;
+  }
+  function dramaActive(){ return !!(S.selected && S.selected.category === "Drama Pendek" && S.drama && S.drama.eps.length); }
+  function updateEpNav(){
+    var nav = $("#epNav");
+    if(!nav) return;
+    if(!dramaActive()){ nav.classList.remove("show"); return; }
+    nav.classList.add("show");
+    var dr = S.drama;
+    $("#epCount").textContent = "Eps " + Math.max(1, dr.idx+1) + " / " + dr.eps.length;
+    $("#prevEp").disabled = (dr.idx <= 0);
+    $("#nextEp").disabled = (dr.idx >= dr.eps.length-1);
+  }
+  function playEpByOffset(delta){
+    if(!dramaActive()){ toast("Buka drama dan pilih episode dulu"); return; }
+    var dr = S.drama, ni = dr.idx + delta;
+    if(ni < 0){ toast("Ini episode pertama"); return; }
+    if(ni >= dr.eps.length){ toast("Ini episode terakhir — selesai menonton"); return; }
+    $$(".ep-chip").forEach(function(x,i){ x.classList.toggle("playing", i===ni); });
+    var ep = dr.eps[ni], num = nomorEpisode(ep, ni);
+    toast("Memutar Eps " + num + "…");
+    dramaPlay(dr.d, num, ep);
+  }
   function dramaOpen(d){
     var det = $("#dramaDetail"); det.style.display = "grid";
     $("#ddCover").src = d.cover || "";
@@ -1347,12 +1388,9 @@ function dramaFetch(path){
         var adaVip = eps.some(function(e){ return e && (e.isCharge == 1 || e.chargeChapter === true); });
         $("#ddSyn").textContent = eps.length + " episode tersedia. Klik nomor episode untuk menonton." + (adaVip ? " Episode bertanda VIP mungkin berbayar." : "");
         var g = $("#epGrid"); g.innerHTML = "";
+        S.drama = { d: d, eps: eps, idx: -1 };
         eps.forEach(function(ep, i){
-          var num = 0;
-          if(ep && ep.chapterIndex != null && !isNaN(parseInt(ep.chapterIndex, 10))) num = parseInt(ep.chapterIndex, 10) + 1;
-          if(!num && ep && ep.chapterName){ var m = /(\d+)/.exec(ep.chapterName); if(m) num = parseInt(m[1], 10); }
-          if(!num && ep) num = ep.episode || ep.ep || ep.number || ep.epNumber || ep.episodeNumber || ep.chapter || ep.chapterNum || ep.chapterSort || ep.sort || 0;
-          if(!num) num = i + 1;
+          var num = nomorEpisode(ep, i);
           var vip = ep && (ep.isCharge == 1 || ep.chargeChapter === true);
           var chip = document.createElement("button");
           chip.className = "ep-chip" + (vip ? " vip" : "");
@@ -1399,6 +1437,10 @@ function dramaFetch(path){
 
 function dramaPlay(d, num, epObj){
     epObj = epObj || {};
+    if(S.drama && S.drama.d === d){
+      var ix = S.drama.eps.indexOf(epObj);
+      if(ix >= 0){ S.drama.idx = ix; updateEpNav(); }
+    }
     function putar(urls, isMp4){
       if(!urls || !urls.length){ toast("URL stream tidak ditemukan"); return; }
       var ch = {
@@ -1459,6 +1501,7 @@ function dramaPlay(d, num, epObj){
     $("#grid").style.display = tv ? "grid" : "none";
     $("#loadMoreWrap").style.display = tv ? "" : "none";
     $("#dramaArea").style.display = tv ? "none" : "block";
+    if(tv){ var n = $("#epNav"); if(n) n.classList.remove("show"); }
     if(m === "drama") dramaLoadHome();
   }
 
@@ -1536,6 +1579,22 @@ function dramaPlay(d, num, epObj){
     });
 
     // native share fallback buttons in modal (they are <a>, href set on update)
+    // ===== Auto-next drama + geser vertikal + wheel + keyboard =====
+    document.addEventListener("pointerdown", function(){ sudahInteraksi = true; }, { once: true });
+    $("#player").addEventListener("ended", function(){ if(dramaActive()) playEpByOffset(1); });
+    var _ty = null, _tx = null;
+    var pf = $("#playerFrame");
+    pf.addEventListener("touchstart", function(e){ if(!dramaActive()){ _ty = null; return; } var t = e.touches[0]; _ty = t.clientY; _tx = t.clientX; }, { passive: true });
+    pf.addEventListener("touchmove", function(e){ if(dramaActive()) e.preventDefault(); }, { passive: false });
+    pf.addEventListener("touchend", function(e){ if(!dramaActive() || _ty == null) return; var t = e.changedTouches[0]; var dy = t.clientY - _ty, dx = t.clientX - _tx; _ty = null; if(Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) playEpByOffset(dy < 0 ? 1 : -1); }, { passive: true });
+    pf.addEventListener("wheel", function(e){ if(!dramaActive()) return; if(Math.abs(e.deltaY) < 30) return; e.preventDefault(); playEpByOffset(e.deltaY > 0 ? 1 : -1); }, { passive: false });
+    document.addEventListener("keydown", function(e){
+      if(!dramaActive()) return;
+      if(e.key === "n" || e.key === "N" || e.key === "PageDown"){ e.preventDefault(); playEpByOffset(1); }
+      else if(e.key === "p" || e.key === "P" || e.key === "PageUp"){ e.preventDefault(); playEpByOffset(-1); }
+    });
+    $("#prevEp").addEventListener("click", function(){ playEpByOffset(-1); });
+    $("#nextEp").addEventListener("click", function(){ playEpByOffset(1); });
   }
 
   /* ---------- boot ---------- */
