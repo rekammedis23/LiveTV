@@ -142,6 +142,33 @@
   .ep-nav button:hover:not(:disabled){background:var(--accent)}
   .ep-nav button:disabled{opacity:.3;cursor:not-allowed}
   .ep-nav .ep-count{font-size:.75rem;font-weight:700;color:#fff;padding:0 .45rem;min-width:64px;text-align:center;font-variant-numeric:tabular-nums}
+  /* ===== Theater mode (full-screen vertical drama) ===== */
+  .theater{position:fixed;inset:0;z-index:300;background:#000;display:flex;align-items:center;justify-content:center}
+  .theater video{height:100%;width:auto;max-width:100%;object-fit:contain;background:#000}
+  @media (max-aspect-ratio: 3/4){ .theater video{width:100%;height:auto;max-height:100%} }
+  .th-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:.7rem;padding:.8rem 1rem;background:linear-gradient(to bottom, rgba(0,0,0,.72), transparent);z-index:5;color:#fff;transition:opacity .35s}
+  .th-title{flex:1;min-width:0}
+  .th-title span{display:block;font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .th-title .th-ep{font-size:.75rem;opacity:.7;font-weight:600;margin-top:.1rem}
+  .th-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:rgba(255,255,255,.14);color:#fff;transition:.2s;padding:0}
+  .th-btn:hover{background:var(--accent)}
+  .th-btn svg{width:18px;height:18px}
+  .th-chevron{position:absolute;left:50%;transform:translateX(-50%);width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.14);color:#fff;z-index:5;transition:.2s;padding:0}
+  .th-chevron:hover:not(:disabled){background:var(--accent)}
+  .th-chevron:disabled{opacity:.2;cursor:not-allowed}
+  .th-chevron svg{width:22px;height:22px}
+  .th-prev{top:72px}.th-next{bottom:72px}
+  .th-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.55);font-size:.72rem;font-weight:600;z-index:5;pointer-events:none;transition:opacity .35s;white-space:nowrap}
+  .theater.idle .th-top,.theater.idle .th-chevron,.theater.idle .th-hint{opacity:0;pointer-events:none}
+  .th-ep-panel{position:absolute;left:0;right:0;bottom:0;max-height:72vh;background:var(--card);border-radius:18px 18px 0 0;z-index:10;padding:1.2rem;overflow-y:auto;animation:slideUp .3s ease;color:var(--text)}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
+  .th-ep-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+  .th-ep-head b{font-size:1rem}
+  .th-ep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:.5rem}
+  .th-ep-chip{padding:.55rem .3rem;border-radius:10px;background:var(--card-2);border:1px solid var(--border);font-size:.78rem;font-weight:700;cursor:pointer;transition:.2s;color:var(--text)}
+  .th-ep-chip:hover{border-color:var(--accent);color:var(--accent)}
+  .th-ep-chip.playing{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .th-ep-chip.vip{color:#facc15;border-color:rgba(250,204,21,.4)}
 
   .info-card{
     background:var(--card); border:1px solid var(--border); border-radius:20px;
@@ -375,6 +402,7 @@
   .drama-note code{background:rgba(0,0,0,.2);padding:.1rem .4rem;border-radius:5px;font-size:.82rem}
   .drama-search{display:flex;gap:.6rem;margin-bottom:1.25rem}
   .drama-search input{flex:1;padding:.8rem 1.1rem;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:.95rem;outline:none;transition:.2s}
+  .drama-search select{padding:.8rem .9rem;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:.88rem;font-weight:700;outline:none;cursor:pointer;max-width:170px}
   .drama-search input:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
   .drama-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1rem}
   .drama-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:.25s;animation:fadeUp .4s ease both}
@@ -522,6 +550,18 @@
       Jika hasil kosong, coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau <code>searchParam</code> di kode.
     </div>
     <div class="drama-search">
+      <select id="providerSel" title="Pilih provider drama">
+        <option value="dramabox">DramaBox</option>
+        <option value="goodshort">GoodShort</option>
+        <option value="shortmax">ShortMax</option>
+        <option value="reelshort">ReelShort</option>
+        <option value="pinedrama">PineDrama</option>
+        <option value="netshort">NetShort</option>
+        <option value="melolo">Melolo</option>
+        <option value="flickreels">FlickReels</option>
+        <option value="freereels">FreeReels</option>
+        <option value="mydrama">MyDrama</option>
+      </select>
       <input id="dramaSearch" type="search" placeholder="Cari drama pendek… (ceo, billionaire, revenge, marriage)" autocomplete="off">
     </div>
     <div class="drama-detail" id="dramaDetail" style="display:none">
@@ -598,6 +638,22 @@
   </div>
 </div>
 
+<!-- ===== Theater mode (full-screen vertical drama) ===== -->
+<div class="theater" id="theater" style="display:none">
+  <video id="theaterVideo" playsinline allowfullscreen></video>
+  <div class="th-top">
+    <button class="th-btn" id="thClose" title="Tutup (Esc)"><i data-lucide="x"></i></button>
+    <div class="th-title"><span id="thName">Judul Drama</span><span class="th-ep" id="thEp">Eps 1</span></div>
+    <button class="th-btn" id="thList" title="Daftar episode"><i data-lucide="list-video"></i></button>
+  </div>
+  <button class="th-chevron th-prev" id="thPrev" title="Episode sebelumnya"><i data-lucide="chevron-up"></i></button>
+  <button class="th-chevron th-next" id="thNext" title="Episode berikutnya"><i data-lucide="chevron-down"></i></button>
+  <div class="th-hint">Geser ke atas / ke bawah untuk pindah episode · ketuk untuk sembunyikan kontrol</div>
+  <div class="th-ep-panel" id="thEpPanel" style="display:none">
+    <div class="th-ep-head"><b>Daftar Episode</b><button class="th-btn" id="thEpClose"><i data-lucide="x"></i></button></div>
+    <div class="th-ep-grid" id="thEpGrid"></div>
+  </div>
+</div>
 <div id="toasts"></div>
 
 <script>
@@ -1226,18 +1282,31 @@
   // ===== Short Drama: Sansekai API (gratis, tanpa key, CORS terbuka) =====
   // Provider tersedia: dramabox, shortmax, reelshort, goodshort, freereels, flickreels, pinedrama, dramanova
   var DRAMA_BASE = "https://api.sansekai.my.id/api";
-  var DRAMA_PROVIDER = "dramabox";
-  var DP = "/" + DRAMA_PROVIDER;
-  // Endpoint bisa disesuaikan jika struktur respons berbeda (kirim sampel JSON ke saya untuk disesuaikan)
-  var DRAMA_EP = {
-    home: DP + "/foryou",
-    search: DP + "/search",
-    searchParam: "query",      // API Sansekai membutuhkan parameter "query" (bukan "keyword")
-    detail: DP + "/detail",    // + ?id=
-    episodes: DP + "/get-allepisode", // + ?bookId=
-    episodesParam: "bookId",
-    play: DP + "/decrypt"      // dramabox: + ?url=
+  var DRAMA_PROVIDER = localStorage.getItem("lip_provider") || "dramabox";
+  // Konfigurasi per-provider sesuai dokumentasi API Sansekai.
+  // mode "list"     : ada endpoint daftar episode + decrypt per episode (dramabox/goodshort/mydrama)
+  // mode "direct"   : detail berisi daftar episode; /get_episode mengembalikan stream langsung
+  // mode "combined" : detail + daftar episode digabung (freereels: detailAndAllEpisode)
+  var PROVIDERS = {
+    dramabox:  { label:"DramaBox",   home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get-allepisode", episodesParam:"bookId",      play:"/decrypt",     mode:"list" },
+    goodshort: { label:"GoodShort",  home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get-allepisode", episodesParam:"bookId",      play:"/decrypt",     mode:"list" },
+    mydrama:   { label:"MyDrama",    home:"/populer", search:"/search", searchParam:"query", detail:"/detail",           episodes:"/episode",        episodesParam:"id",          play:"",             mode:"list" },
+    shortmax:  { label:"ShortMax",   home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get_episode",    episodesParam:"shortPlayId", play:"/get_episode", mode:"direct" },
+    reelshort: { label:"ReelShort",  home:"/foryou",  search:"/search", searchParam:"query", detail:"/get_detail",       episodes:"/get_episode",    episodesParam:"id",          play:"/get_episode", mode:"direct" },
+    pinedrama: { label:"PineDrama",  home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get_episode",    episodesParam:"id",          play:"/get_episode", mode:"direct" },
+    netshort:  { label:"NetShort",   home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get_episode",    episodesParam:"id",          play:"/get_episode", mode:"direct" },
+    melolo:    { label:"Melolo",     home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get_episode",    episodesParam:"id",          play:"/get_episode", mode:"direct" },
+    flickreels:{ label:"FlickReels", home:"/foryou",  search:"/search", searchParam:"query", detail:"/detail",           episodes:"/get_episode",    episodesParam:"id",          play:"/get_episode", mode:"direct" },
+    freereels: { label:"FreeReels",  home:"/foryou",  search:"/search", searchParam:"query", detail:"/detailAndAllEpisode", episodes:"",              episodesParam:"id",          play:"",             mode:"combined" }
   };
+  var PVD = PROVIDERS[DRAMA_PROVIDER] || PROVIDERS.dramabox;
+  function pvdPath(key){ return "/" + DRAMA_PROVIDER + (PVD[key] || ""); }
+  function setProvider(p){
+    DRAMA_PROVIDER = p;
+    PVD = PROVIDERS[p] || PROVIDERS.dramabox;
+    localStorage.setItem("lip_provider", p);
+    S.drama = null;
+  }
   var MODE = "tv";
 
 function dramaFetch(path){
@@ -1262,13 +1331,13 @@ function dramaFetch(path){
     if(!genre && Array.isArray(o.tags)) genre = o.tags.join(", ");
     if(!genre && o.tags) genre = String(o.tags);
     return {
-      id: o.bookId || o.id || o.dramaId || o.code || o.slug || o.drama_id || o.book_id || o.collection_id || "",
+      id: o.bookId || o.id || o.shortPlayId || o.shortPlayCode || o.dramaId || o.code || o.slug || o.drama_id || o.book_id || o.collection_id || "",
       bookId: o.bookId || o.book_id || "",
-      title: o.bookName || o.title || o.name || o.dramaName || o.drama_name || "Tanpa Judul",
+      title: o.bookName || o.shortPlayName || o.title || o.name || o.dramaName || o.drama_name || "Tanpa Judul",
       cover: o.coverWap || o.cover || o.poster || o.image || o.thumbnail || o.posterUrl || "",
       genre: genre || "Drama Pendek",
       episodes: o.chapterCount || o.episodes || o.totalEpisodes || o.epCount || o.total_episodes || 0,
-      synopsis: o.introduction || o.synopsis || o.desc || ""
+      synopsis: o.introduction || o.synopsis || o.desc || o.summary || ""
     };
   }
   // Respons foryou berisi campuran kartu drama (cardType=1) dan kartu tag (cardType=3)
@@ -1311,7 +1380,7 @@ function dramaFetch(path){
     $("#dramaNote").style.display = "none";
     $("#dramaDetail").style.display = "none";
     $("#dramaGrid").innerHTML = '<div class="skeleton" style="height:260px;border-radius:16px"></div>'.repeat(8);
-    dramaFetch(DRAMA_EP.home).then(function(j){
+    dramaFetch(pvdPath("home")).then(function(j){
       dramaRender(flattenDramaList(findList(j)));
     }).catch(function(e){
       $("#dramaGrid").innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="alert-triangle"></i><h3>Gagal memuat drama</h3><p>'+esc(e.message)+'. Coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau tunggu 1 menit (rate limit 5 req/menit).</p></div>';
@@ -1357,11 +1426,11 @@ function dramaFetch(path){
 
     // Provider berbeda memakai field id & parameter berbeda; coba semua kombinasi berurutan.
     var idCands = [];
-    [d.id, d.bookId, d.dramaId, d.code, d.collection_id].forEach(function(v){
+    [d.id, d.shortPlayId, d.shortPlayCode, d.bookId, d.dramaId, d.code, d.collection_id].forEach(function(v){
       if(v != null && v !== "" && idCands.indexOf(String(v)) < 0) idCands.push(String(v));
     });
     var params = [];
-    [DRAMA_EP.episodesParam, "bookId", "id", "book_id", "bookid"].forEach(function(v){
+    [PVD.episodesParam, "shortPlayId", "shortPlayCode", "bookId", "id", "dramaId", "code", "book_id", "bookid"].forEach(function(v){
       if(v && params.indexOf(v) < 0) params.push(v);
     });
 
@@ -1371,15 +1440,17 @@ function dramaFetch(path){
       return;
     }
 
-    var pi = 0, ii = 0, lastErr = "";
+    var epsEndpoints = (PVD.mode === "list") ? [pvdPath("episodes")] : (PVD.mode === "combined") ? [pvdPath("detail")] : [pvdPath("detail"), pvdPath("episodes")];
+    var ei = 0, pi = 0, ii = 0, lastErr = "";
     function gagal(){
       $("#ddSyn").textContent = "Gagal memuat daftar episode" + (lastErr ? ": " + lastErr : "") + ". Coba ganti DRAMA_PROVIDER atau pilih drama lain.";
     }
     function coba(){
       if(ii >= idCands.length){ gagal(); return; }
       if(pi >= params.length){ pi = 0; ii++; coba(); return; }
-      var p = params[pi++], idv = idCands[ii];
-      var url = DRAMA_EP.episodes + "?" + p + "=" + encodeURIComponent(idv);
+      if(ei >= epsEndpoints.length){ ei = 0; pi++; coba(); return; }
+      var epUrl = epsEndpoints[ei++], p = params[pi], idv = idCands[ii];
+      var url = epUrl + "?" + p + "=" + encodeURIComponent(idv);
       console.log("[drama] fetch episodes:", url);
       dramaFetch(url).then(function(j){
         var eps = findList(j);
@@ -1399,7 +1470,7 @@ function dramaFetch(path){
           chip.addEventListener("click", function(){
             $$(".ep-chip").forEach(function(x){ x.classList.remove("playing"); });
             chip.classList.add("playing");
-            dramaPlay(d, num, ep);
+            openTheater(d, eps, i);
           });
           g.appendChild(chip);
         });
@@ -1435,6 +1506,45 @@ function dramaFetch(path){
     return out;
   }
 
+  // Resolusi URL stream episode (decrypt via API jika perlu). Dipakai bersama oleh pemutar inline & theater.
+  function resolveStream(epObj){
+    epObj = epObj || {};
+    return new Promise(function(resolve, reject){
+      var direct = epObj.best_url || epObj.url || epObj.video || epObj.videoUrl || epObj.play_url || epObj.stream || epObj.m3u8 || (epObj.data && (epObj.data.url || epObj.data.video || epObj.data.best_url));
+      if(direct && /^https?:\/\//.test(direct)){ resolve({ urls:[direct], isMp4:true }); return; }
+      var cands = kandidatVideoDrama(epObj);
+      if(cands.length){
+        var targetUrl = cands[0].url;
+        dramaFetch(pvdPath("play") + "?url=" + encodeURIComponent(targetUrl)).then(function(j){
+          var u = j.streamUrl || j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+          var urlList = [];
+          if(u && /^https?:\/\//.test(u)) urlList.push(u);
+          cands.forEach(function(c){ if(urlList.indexOf(c.url) < 0) urlList.push(c.url); });
+          resolve({ urls: urlList.length ? urlList : cands.map(function(c){ return c.url; }), isMp4: !!j.streamUrl });
+        }).catch(function(){
+          resolve({ urls: cands.map(function(c){ return c.url; }), isMp4: false });
+        });
+        return;
+      }
+      var enc = epObj.encryptedUrl || epObj.playUrl || epObj.id;
+      if(enc){
+        dramaFetch(pvdPath("play") + "?url=" + encodeURIComponent(enc)).then(function(j){
+          var u = j.streamUrl || j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+          resolve({ urls: (typeof u === "string" && /^https?:\/\//.test(u)) ? [u] : [], isMp4: !!j.streamUrl });
+        }).catch(function(e){ reject(e); });
+      } else {
+        var pid = epObj.id || epObj.chapterId || epObj.episodeId || epObj.shortPlayId || epObj.epId;
+        if(pid && PVD.play){
+          dramaFetch(pvdPath("play") + "?id=" + encodeURIComponent(pid)).then(function(j){
+            var u = j.streamUrl || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+            resolve({ urls: (u && /^https?:\/\//.test(u)) ? [u] : [], isMp4: !!j.streamUrl });
+          }).catch(function(){ reject(new Error("Gagal memuat stream")); });
+        } else {
+          reject(new Error("Data episode tidak lengkap — coba provider lain."));
+        }
+      }
+    });
+  }
 function dramaPlay(d, num, epObj){
     epObj = epObj || {};
     if(S.drama && S.drama.d === d){
@@ -1458,40 +1568,78 @@ function dramaPlay(d, num, epObj){
     }
     var vip = epObj.isCharge == 1 || epObj.chargeChapter === true;
     if(vip) toast("Episode VIP/berbayar — tetap dicoba diputar.");
-
-    var direct = epObj.best_url || epObj.url || epObj.video || epObj.videoUrl || epObj.play_url || epObj.stream || epObj.m3u8 || (epObj.data && (epObj.data.url || epObj.data.video || epObj.data.best_url));
-    if(direct && /^https?:\/\//.test(direct)){ putar([direct]); return; }
-
-    var cands = kandidatVideoDrama(epObj);
-    if(cands.length){
-      var targetUrl = cands[0].url;
-      
-      dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(targetUrl)).then(function(j){
-        // Endpoint decrypt Sansekai mengembalikan {success, streamUrl}.
-        // streamUrl (decrypt-video) adalah MP4 terdekripsi yang bisa langsung diputar — HARUS diprioritaskan.
-        var u = j.streamUrl || j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
-        var urlList = [];
-        if(u && /^https?:\/\//.test(u)) urlList.push(u);
-        cands.forEach(function(c){ if(urlList.indexOf(c.url) < 0) urlList.push(c.url); });
-        if(urlList.length) putar(urlList, !!j.streamUrl);
-        else putar(cands.map(function(c){ return c.url; }));
-      }).catch(function(err){
-        toast(err.message || "Gagal mendekripsi stream");
-        putar(cands.map(function(c){ return c.url; }));
-      });
-      return;
-    }
-
-    var enc = epObj.encryptedUrl || epObj.playUrl || epObj.id;
-    if(enc){
-      dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(enc)).then(function(j){
-        var u = j.streamUrl || j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
-        putar(typeof u === "string" ? [u] : [], !!j.streamUrl);
-      }).catch(function(e){ toast(e.message || "Gagal memuat stream"); });
-    } else {
-      toast("Data episode tidak lengkap — coba provider lain.");
-    }
+    resolveStream(epObj).then(function(r){ putar(r.urls, r.isMp4); }).catch(function(e){ toast(e.message || "Gagal memuat stream"); });
   }
+
+  /* ===== Theater mode (full-screen vertical drama) ===== */
+  var TH = { open:false, d:null, eps:[], idx:-1, hls:null, idleTimer:null };
+  function openTheater(d, eps, idx){
+    TH.open = true; TH.d = d; TH.eps = eps; TH.idx = idx;
+    S.drama = { d:d, eps:eps, idx:idx };
+    $("#theater").style.display = "flex";
+    document.body.style.overflow = "hidden";
+    $("#thName").textContent = d.title || "";
+    buildThEpGrid();
+    thPlay(idx);
+    if(window.lucide) lucide.createIcons();
+  }
+  function closeTheater(){
+    if(!TH.open) return;
+    TH.open = false;
+    if(TH.hls){ try{ TH.hls.destroy(); }catch(e){} TH.hls = null; }
+    var v = $("#theaterVideo"); v.pause(); v.removeAttribute("src"); try{ v.load(); }catch(e){}
+    $("#theater").style.display = "none";
+    $("#thEpPanel").style.display = "none";
+    document.body.style.overflow = "";
+    clearTimeout(TH.idleTimer);
+  }
+  function thShowControls(){
+    var t = $("#theater"); t.classList.remove("idle");
+    clearTimeout(TH.idleTimer);
+    TH.idleTimer = setTimeout(function(){ if(TH.open) t.classList.add("idle"); }, 3500);
+  }
+  function buildThEpGrid(){
+    var g = $("#thEpGrid"); g.innerHTML = "";
+    TH.eps.forEach(function(ep, i){
+      var num = nomorEpisode(ep, i);
+      var vip = ep && (ep.isCharge == 1 || ep.chargeChapter === true);
+      var b = document.createElement("button");
+      b.className = "th-ep-chip" + (vip ? " vip" : "") + (i === TH.idx ? " playing" : "");
+      b.textContent = "Eps " + num + (vip ? " ★" : "");
+      b.addEventListener("click", function(){ thPlay(i); $("#thEpPanel").style.display = "none"; });
+      g.appendChild(b);
+    });
+  }
+  function thPlay(idx){
+    if(idx < 0 || idx >= TH.eps.length){ toast(idx < 0 ? "Ini episode pertama" : "Ini episode terakhir"); return; }
+    TH.idx = idx; if(S.drama) S.drama.idx = idx;
+    $("#thEp").textContent = "Eps " + nomorEpisode(TH.eps[idx], idx) + " / " + TH.eps.length;
+    $("#thPrev").disabled = (idx <= 0);
+    $("#thNext").disabled = (idx >= TH.eps.length - 1);
+    $$("#thEpGrid .th-ep-chip").forEach(function(x,i){ x.classList.toggle("playing", i===idx); });
+    var v = $("#theaterVideo");
+    if(TH.hls){ try{ TH.hls.destroy(); }catch(e){} TH.hls = null; }
+    v.pause();
+    thShowControls();
+    var ep = TH.eps[idx];
+    var vip = ep && (ep.isCharge == 1 || ep.chargeChapter === true);
+    if(vip) toast("Episode VIP/berbayar — tetap dicoba diputar.");
+    resolveStream(ep).then(function(r){
+      if(!r.urls || !r.urls.length){ toast("URL stream tidak ditemukan"); return; }
+      var url = r.urls[0];
+      v.muted = !sudahInteraksi;
+      if(r.isMp4 || /\.mp4(\?|$)/i.test(url) || url.indexOf("decrypt-video") >= 0){
+        v.src = url; v.play().catch(function(){});
+      } else if(window.Hls && Hls.isSupported()){
+        TH.hls = new Hls(); TH.hls.loadSource(url); TH.hls.attachMedia(v);
+        TH.hls.on(Hls.Events.MANIFEST_PARSED, function(){ v.play().catch(function(){}); });
+        TH.hls.on(Hls.Events.ERROR, function(ev,data){ if(data.fatal) toast("Gagal memutar aliran ini"); });
+      } else {
+        v.src = url; v.play().catch(function(){});
+      }
+    }).catch(function(e){ toast(e.message || "Gagal memuat stream"); });
+  }
+
   function setMode(m){
     MODE = m;
     $$(".mode-switch button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode === m); });
@@ -1575,7 +1723,13 @@ function dramaPlay(d, num, epObj){
       m.addEventListener("click", function(e){ if(e.target === m) m.classList.remove("show"); });
     });
     document.addEventListener("keydown", function(e){
-      if(e.key === "Escape") $$(".modal-backdrop.show").forEach(function(m){ m.classList.remove("show"); });
+      if(e.key === "Escape"){
+        if(TH.open){ closeTheater(); return; }
+        $$(".modal-backdrop.show").forEach(function(m){ m.classList.remove("show"); });
+      }
+      if(!TH.open) return;
+      if(e.key === "ArrowDown" || e.key === "n" || e.key === "N" || e.key === "PageDown"){ e.preventDefault(); thPlay(TH.idx + 1); }
+      else if(e.key === "ArrowUp" || e.key === "p" || e.key === "P" || e.key === "PageUp"){ e.preventDefault(); thPlay(TH.idx - 1); }
     });
 
     // native share fallback buttons in modal (they are <a>, href set on update)
@@ -1595,6 +1749,24 @@ function dramaPlay(d, num, epObj){
     });
     $("#prevEp").addEventListener("click", function(){ playEpByOffset(-1); });
     $("#nextEp").addEventListener("click", function(){ playEpByOffset(1); });
+    // ===== Theater events (full-screen drama) =====
+    $("#thClose").addEventListener("click", closeTheater);
+    $("#thPrev").addEventListener("click", function(){ thPlay(TH.idx - 1); });
+    $("#thNext").addEventListener("click", function(){ thPlay(TH.idx + 1); });
+    $("#thList").addEventListener("click", function(){ var p = $("#thEpPanel"); p.style.display = (p.style.display === "block" ? "none" : "block"); thShowControls(); });
+    $("#thEpClose").addEventListener("click", function(){ $("#thEpPanel").style.display = "none"; });
+    $("#theaterVideo").addEventListener("ended", function(){ if(TH.open) thPlay(TH.idx + 1); });
+    $("#theater").addEventListener("click", function(e){
+      if(e.target.id === "theater" || e.target.id === "theaterVideo"){
+        if($("#theater").classList.contains("idle")) thShowControls(); else $("#theater").classList.add("idle");
+      }
+    });
+    var _thy = null;
+    $("#theater").addEventListener("touchstart", function(e){ if(!TH.open) return; _thy = e.touches[0].clientY; thShowControls(); }, {passive:true});
+    $("#theater").addEventListener("touchmove", function(e){ if(TH.open) e.preventDefault(); }, {passive:false});
+    $("#theater").addEventListener("touchend", function(e){ if(!TH.open || _thy == null) return; var dy = e.changedTouches[0].clientY - _thy; _thy = null; if(Math.abs(dy) > 60) thPlay(TH.idx + (dy < 0 ? 1 : -1)); }, {passive:true});
+    $("#theater").addEventListener("wheel", function(e){ if(!TH.open) return; e.preventDefault(); if(Math.abs(e.deltaY) > 30) thPlay(TH.idx + (e.deltaY > 0 ? 1 : -1)); }, {passive:false});
+    $("#theater").addEventListener("mousemove", thShowControls);
   }
 
   /* ---------- boot ---------- */
@@ -1607,13 +1779,19 @@ function dramaPlay(d, num, epObj){
     $$(".mode-switch button").forEach(function(b){
       b.addEventListener("click", function(){ setMode(b.dataset.mode); });
     });
+    $("#providerSel").value = DRAMA_PROVIDER;
+    $("#providerSel").addEventListener("change", function(){
+      setProvider(this.value);
+      $("#dramaSearch").value = "";
+      dramaLoadHome();
+    });
     var dramaTimer;
     $("#dramaSearch").addEventListener("input", function(){
       clearTimeout(dramaTimer);
       var v = this.value.trim();
       dramaTimer = setTimeout(function(){
         if(!v){ dramaLoadHome(); return; }
-        dramaFetch(DRAMA_EP.search + "?" + DRAMA_EP.searchParam + "=" + encodeURIComponent(v))
+        dramaFetch(pvdPath("search") + "?" + PVD.searchParam + "=" + encodeURIComponent(v))
           .then(function(j){ dramaRender(flattenDramaList(findList(j))); })
           .catch(function(){});
       }, 350);
