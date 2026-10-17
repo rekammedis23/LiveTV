@@ -510,7 +510,7 @@
   <!-- Short Drama area -->
   <section id="dramaArea" style="display:none">
     <div class="drama-note" id="dramaNote" style="display:none">
-      Fitur <b>Short Drama</b> menggunakan API Sansekai (gratis, tanpa key). Rate limit 10 request/menit.
+      Fitur <b>Short Drama</b> menggunakan API Sansekai (gratis, tanpa key). Rate limit 5 request/menit.
       Jika hasil kosong, coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau <code>searchParam</code> di kode.
     </div>
     <div class="drama-search">
@@ -761,10 +761,15 @@
   /* ---------- data loading ---------- */
   // Dua sumber digabung: iptv-org (variasi terbanyak) + Free-TV (terkurasi, lebih stabil, 86% https)
   var SUMBER = [
-    { nama: "iptv-org", url: "https://iptv-org.github.io/iptv/index.m3u", grupKategori: true },
-    { nama: "Free-TV", url: "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8", grupKategori: false }
+    { nama: "iptv-org", grupKategori: true, coba: [
+        "https://iptv-org.github.io/iptv/index.m3u",
+        "https://cdn.jsdelivr.net/gh/iptv-org/iptv@gh-pages/index.m3u"
+    ]},
+    { nama: "Free-TV", grupKategori: false, coba: [
+        "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8",
+        "https://cdn.jsdelivr.net/gh/Free-TV/IPTV@master/playlist.m3u8"
+    ]}
   ];
-  var CORS_PROXY = "https://api.allorigins.win/raw?url=";
   // PROXY_BASE: isi dengan URL proxy Anda sendiri (Cloudflare Worker gratis) agar aliran http / diblokir-CORS bisa diputar.
   // Contoh:  "https://iptv-proxy.username.workers.dev/?u="
   // Kosongkan jika tidak memakai proxy (aliran https+CORS tetap jalan normal).
@@ -785,12 +790,15 @@
   }
 
   function ambilSatu(src){
-    return fetch(src.url).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
-      .catch(function(){
-        return fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(src.url))
-          .then(function(r){ if(!r.ok) throw new Error("proxy fail"); return r.text(); });
-      })
-      .then(function(text){ return parseM3U(text, src); });
+    var i = 0;
+    function coba(){
+      if(i >= src.coba.length) return Promise.reject(new Error("semua mirror gagal"));
+      var u = src.coba[i++];
+      return fetch(u).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
+        .then(function(text){ return parseM3U(text, src); })
+        .catch(function(){ return coba(); });
+    }
+    return coba();
   }
 
   function loadData(){
@@ -1013,6 +1021,7 @@
     video.muted = true; // autoplay hanya diizinkan peramban jika bisu
 
     var watchDog = null;
+    var gagalDiproses = false; // cegah cobaBerikutnya dipanggil dua kali (watchdog + error fatal bersamaan)
     function clearWatch(){ if(watchDog){ clearTimeout(watchDog); watchDog = null; } }
     function onFail(){
       clearWatch();
@@ -1050,9 +1059,10 @@
     function startStream(url, pakaiProxy, idx){
       setStatus(status, pakaiProxy ? "Menggunakan proxy…" : (idx > 0 ? "Mencoba alternatif…" : "Menghubungkan ke aliran…"), "loading");
       clearWatch();
+      gagalDiproses = false;
 
       // Video MP4 langsung (mis. dari CDN TikTok) → putar native, tidak perlu Hls.js
-      if(/\.mp4(\?|$)/i.test(url) || url.indexOf("mime_type=video_mp4") >= 0 || url.indexOf("tiktokcdn.com") >= 0){
+      if(ch.isMp4 || /\.mp4(\?|$)/i.test(url) || url.indexOf("mime_type=video_mp4") >= 0 || url.indexOf("tiktokcdn.com") >= 0 || url.indexOf("decrypt-video") >= 0){
         video.src = url;
         video.addEventListener("loadedmetadata", onOk, { once: true });
         video.addEventListener("error", function(){ cobaBerikutnya(idx, pakaiProxy); }, { once: true });
@@ -1087,6 +1097,8 @@
     }
 
     function cobaBerikutnya(idx, pakaiProxy){
+      if(gagalDiproses) return;
+      gagalDiproses = true;
       if(S.hls){ try{ S.hls.destroy(); }catch(e){} S.hls = null; }
       if(idx + 1 < kandidat.length){ startStream(kandidat[idx+1], false, idx+1); return; }
       if(!pakaiProxy && PROXY_BASE && ProxyLoader){ startStream(ch.url, true, idx); return; }
@@ -1159,30 +1171,35 @@
     document.title = name + " — LayarIPTV";
     var video = $("#embedVideo"), status = $("#embedStatus");
     setStatus(status, "Memuat siaran…", "loading");
-    var hls = null, triedProxy = false;
+    var kandidat = [url];
+    if(url && url.indexOf("http://") === 0) kandidat.unshift(url.replace(/^http:/, "https:"));
+    var ki = 0, hls = null;
     function done(){ setStatus(status,""); if(ap){ video.muted=true; video.play().catch(function(){}); } }
     function fail(){ setStatus(status, "Aliran tidak dapat dimuat.", "error"); }
-    function startEmbed(u){
+    function berikutnya(){
+      ki++;
+      if(ki < kandidat.length){ setStatus(status, "Mencoba alternatif…", "loading"); mulai(kandidat[ki]); }
+      else fail();
+    }
+    function mulai(u){
+      if(/\.mp4(\?|$)/i.test(u) || u.indexOf("decrypt-video") >= 0){
+        video.src = u;
+        video.addEventListener("loadedmetadata", done, {once:true});
+        video.addEventListener("error", berikutnya, {once:true});
+        return;
+      }
       if(window.Hls && Hls.isSupported()){
         if(hls){ try{ hls.destroy(); }catch(e){} }
         hls = new Hls(); hls.loadSource(u); hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, done);
-        hls.on(Hls.Events.ERROR, function(e,d){
-          if(d.fatal){
-            if(!triedProxy){ triedProxy = true; setStatus(status, "Mencoba jalur alternatif…", "loading"); startEmbed(CORS_PROXY + encodeURIComponent(url)); }
-            else fail();
-          }
-        });
-      } else {
+        hls.on(Hls.Events.ERROR, function(e,d){ if(d.fatal) berikutnya(); });
+      } else if(video.canPlayType("application/vnd.apple.mpegurl")){
         video.src = u;
         video.addEventListener("loadedmetadata", done, {once:true});
-        video.addEventListener("error", function(){
-          if(!triedProxy){ triedProxy = true; setStatus(status, "Mencoba jalur alternatif…", "loading"); startEmbed(CORS_PROXY + encodeURIComponent(url)); }
-          else fail();
-        }, {once:true});
-      }
+        video.addEventListener("error", berikutnya, {once:true});
+      } else fail();
     }
-    startEmbed(url);
+    mulai(kandidat[0]);
   }
 
   /* ---------- theme ---------- */
@@ -1204,7 +1221,7 @@
   var DRAMA_EP = {
     home: DP + "/foryou",
     search: DP + "/search",
-    searchParam: "keyword",    // coba ganti "q" / "search" / "s" jika hasil kosong
+    searchParam: "query",      // API Sansekai membutuhkan parameter "query" (bukan "keyword")
     detail: DP + "/detail",    // + ?id=
     episodes: DP + "/get-allepisode", // + ?bookId=
     episodesParam: "bookId",
@@ -1214,7 +1231,7 @@
 
 function dramaFetch(path){
     return fetch(DRAMA_BASE + path).then(function(r){
-      if(r.status === 429) throw new Error("Rate limit tercapai (maks 10 request/menit). Tunggu 1 menit.");
+      if(r.status === 429) throw new Error("Rate limit tercapai (maks 5 request/menit). Tunggu 1 menit.");
       if(!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
@@ -1286,7 +1303,7 @@ function dramaFetch(path){
     dramaFetch(DRAMA_EP.home).then(function(j){
       dramaRender(flattenDramaList(findList(j)));
     }).catch(function(e){
-      $("#dramaGrid").innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="alert-triangle"></i><h3>Gagal memuat drama</h3><p>'+esc(e.message)+'. Coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau tunggu 1 menit (rate limit 10 req/menit).</p></div>';
+      $("#dramaGrid").innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="alert-triangle"></i><h3>Gagal memuat drama</h3><p>'+esc(e.message)+'. Coba ganti <code>DRAMA_PROVIDER</code> (shortmax/reelshort/goodshort) atau tunggu 1 menit (rate limit 5 req/menit).</p></div>';
       if(window.lucide) lucide.createIcons();
     });
   }
@@ -1382,7 +1399,7 @@ function dramaFetch(path){
 
 function dramaPlay(d, num, epObj){
     epObj = epObj || {};
-    function putar(urls){
+    function putar(urls, isMp4){
       if(!urls || !urls.length){ toast("URL stream tidak ditemukan"); return; }
       var ch = {
         name: d.title + " — Eps " + num,
@@ -1391,7 +1408,8 @@ function dramaPlay(d, num, epObj){
         logo: d.cover || "",
         category: "Drama Pendek",
         country: "CN",
-        quality: "MP4"
+        quality: "MP4",
+        isMp4: !!isMp4
       };
       playChannel(ch);
       $("#playerFrame").scrollIntoView({ behavior:"smooth", block:"start" });
@@ -1407,11 +1425,13 @@ function dramaPlay(d, num, epObj){
       var targetUrl = cands[0].url;
       
       dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(targetUrl)).then(function(j){
-        var u = j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+        // Endpoint decrypt Sansekai mengembalikan {success, streamUrl}.
+        // streamUrl (decrypt-video) adalah MP4 terdekripsi yang bisa langsung diputar — HARUS diprioritaskan.
+        var u = j.streamUrl || j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
         var urlList = [];
         if(u && /^https?:\/\//.test(u)) urlList.push(u);
         cands.forEach(function(c){ if(urlList.indexOf(c.url) < 0) urlList.push(c.url); });
-        if(urlList.length) putar(urlList);
+        if(urlList.length) putar(urlList, !!j.streamUrl);
         else putar(cands.map(function(c){ return c.url; }));
       }).catch(function(err){
         toast(err.message || "Gagal mendekripsi stream");
@@ -1423,8 +1443,8 @@ function dramaPlay(d, num, epObj){
     var enc = epObj.encryptedUrl || epObj.playUrl || epObj.id;
     if(enc){
       dramaFetch(DRAMA_EP.play + "?url=" + encodeURIComponent(enc)).then(function(j){
-        var u = j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
-        putar(typeof u === "string" ? [u] : []);
+        var u = j.streamUrl || j.best_url || j.url || j.video || j.videoUrl || j.play_url || j.stream || j.m3u8 || (j.data && (j.data.url || j.data.video || j.data.best_url)) || (typeof j.data === "string" ? j.data : "");
+        putar(typeof u === "string" ? [u] : [], !!j.streamUrl);
       }).catch(function(e){ toast(e.message || "Gagal memuat stream"); });
     } else {
       toast("Data episode tidak lengkap — coba provider lain.");
